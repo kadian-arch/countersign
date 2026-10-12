@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -30,7 +30,7 @@ jobs:
   stress:
     # the guard against a seeded stream of random attempted refunds and payouts, no model, no network.
     # it fails if any call that ran broke one of the sixteen rules in stress.py
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,7 +43,7 @@ jobs:
 
   mutation:
     # breaks the guard on purpose, one protection at a time, and fails if the stress test does not notice
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,13 +54,13 @@ jobs:
       - run: python scripts/mutation_check.py --n 1500
 
   image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t countersign .
 
   secrets:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:

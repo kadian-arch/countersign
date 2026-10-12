@@ -170,7 +170,18 @@ class Mailbox:
         if len(recent) >= REPLIES_PER_SENDER_PER_HOUR:
             raise PermissionError("too many replies to this sender this hour")
         self.sent[incoming.sender.lower()] = recent + [now]
+        self._send(compose_reply(self.settings, self.shop_name(), incoming, text))
+
+    def send_alert(self, to: str, subject: str, text: str):
+        """A message from the shop to its owner, not an answer to anyone."""
+        mail = EmailMessage()
+        mail["From"], mail["To"], mail["Subject"] = formataddr((self.shop_name(), self.settings.user)), to, subject
+        mail["Auto-Submitted"] = "auto-generated"
+        mail.set_content(text)
+        self._send(mail)
+
+    def _send(self, message: EmailMessage):
         s = self.settings
         with smtplib.SMTP_SSL(s.smtp_host, 465, timeout=30) as smtp:
             smtp.login(s.user, s.password)
-            smtp.send_message(compose_reply(s, self.shop_name(), incoming, text))
+            smtp.send_message(message)

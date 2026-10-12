@@ -16,6 +16,7 @@ class Profile(BaseModel):
     owner_email: str = Field(max_length=200)
     knowledge: str = Field("", max_length=4000, description="the facts the agent may state about the shop")
     policy: Policy = Field(default_factory=Policy)
+    alerts: bool = Field(True, description="email the owner when a request is waiting for approval")
 
     @field_validator("owner_email")
     @classmethod
@@ -47,7 +48,7 @@ def save(store, profile: Profile):
 def changes(old: Profile, new: Profile) -> dict:
     """Field by field, what is different, for showing the owner before they confirm."""
     out = {}
-    for key in ("shop_name", "owner_email", "knowledge"):
+    for key in ("shop_name", "owner_email", "knowledge", "alerts"):
         if getattr(old, key) != getattr(new, key):
             out[key] = [getattr(old, key), getattr(new, key)]
     for key in Policy.model_fields:

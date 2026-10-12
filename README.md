@@ -55,6 +55,10 @@ In the PayPal shop an allowed refund or payment really goes to PayPal and its re
 
 With `MAIL_USER` and `MAIL_PASSWORD` in `.env` (for Gmail, an app password) the PayPal shop reads real mail. New messages are read every 20 seconds, handled by the assistant, and the reply is emailed back in the same thread. Who sent a message comes from the Authentication-Results header written by the receiving server (`mailbox.py`), not from the From line: only the topmost header counts, and only from the expected server. A reply goes only to a sender the server confirmed, at most three an hour per sender, and mail from robots and mailing lists is skipped so two assistants cannot answer each other forever. Use a mailbox made for the shop. Messages typed into the page go through the same path, without the email.
 
+### Owner alerts
+
+When the guard holds a request, the owner is emailed at the address on the Setup page: what was asked, who asked, why it was held, and a link. The link opens a page that shows the request with Approve and Refuse buttons. Opening the link changes nothing, so a mail scanner cannot approve anything, and approving runs the guard again before PayPal is called. The link is signed with the owner token for that one request and stops working after 24 hours. At most ten alert emails go out an hour, since a stranger's requests are what create holds; the rest stay in the queue on the page and go out with the next alert. Alerts need the shop mailbox and `OWNER_TOKEN`, and can be switched off on the Setup page. Set `PUBLIC_URL` to the address the server is reached at so the links point to it.
+
 A greeting uses the name on the From line only if it is a few plain words, since that name is the sender's own claim.
 
 ### Being a customer on the shared shop

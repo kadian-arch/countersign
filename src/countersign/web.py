@@ -7,6 +7,7 @@ and changing anything or approving a held action needs the owner token.
 The page keeps itself current: every change to a shop bumps a version, and /api/stream pushes the new state.
 """
 import asyncio
+import html
 import json
 import os
 import re
@@ -18,11 +19,13 @@ from contextlib import asynccontextmanager
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Literal
+from urllib.parse import parse_qs
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request as HttpRequest, Response
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from . import alerts
 from . import demo_data as demo
 from . import emails, mailbox
 from . import profile as profiles
@@ -107,6 +110,7 @@ class SettingsIn(BaseModel):
     owner_email: str | None = Field(None, max_length=200)
     knowledge: str | None = Field(None, max_length=4000)
     policy: dict | None = None
+    alerts: bool | None = None
 
 
 class CompileIn(BaseModel):
@@ -138,6 +142,7 @@ class Workspace:
         self.count = 0
         self.inbox: list[dict] = []
         self.via: dict = {}   # emails that came in through the mailbox, so the reply can go back by mail
+        self.alert_lock = threading.Lock()
         self.touched = time.time()
         self.paypal = None
         self.sim = None
@@ -327,6 +332,8 @@ class Workspace:
             self.hub.tally({"executed": "ran", "held": "held", "blocked": "refused"}.get(res["status"], "failed"),
                            broke={"rules": broken, "sender": ask.sender, "tool": ask.tool, "args": args} if broken else None)
             self.bump()
+        if res["status"] == "held":
+            self.alert_owner()
         return {"status": res["status"], "action_id": res.get("action_id"), "reasons": res.get("reasons", []), "error": res.get("error")}
 
     @staticmethod
@@ -401,6 +408,42 @@ class Workspace:
                 item["emailed"] = f"not sent: {str(e)[:80]}"
         with self.lock:
             self.bump()
+        self.alert_owner()
+
+    # ---- telling the owner
+
+    def alert_owner(self):
+        """Emails the owner about requests that are waiting and have not been mentioned yet. Runs in the background."""
+        hub = self.hub
+        if (self.kind == "live" and self.profile.alerts and hub.owner_token and hub.mailer is not None
+                and hasattr(hub.mailer, "send_alert")):
+            threading.Thread(target=self._alert, daemon=True).start()
+
+    def _alerted(self) -> set[int]:
+        try:
+            return set(json.loads(self.store.get_setting("alerted", "[]")))
+        except ValueError:
+            return set()
+
+    def _alert(self):
+        with self.alert_lock:
+            with self.lock:
+                pending, seen = self.ledger.pending(), self._alerted()
+                fresh = [r for r in pending if r["id"] not in seen]
+                shop, owner = self.profile.shop_name, self.profile.owner_email
+            for row in fresh:
+                if not self.hub.allow_alert():   # the rest stay in the queue and go out with the next alert
+                    break
+                link = f"{self.hub.public_url}/review/{row['id']}?sig={alerts.sign(self.hub.owner_token, row['id'])}"
+                subject, text = alerts.compose(row, self.store, shop, link, len(pending) - 1)
+                try:
+                    self.hub.mailer.send_alert(owner, subject, text)
+                except Exception as e:   # not marked as told, so the next alert tries again
+                    self.hub.mailer.error = f"could not email the owner: {str(e)[:80]}"
+                    break
+                seen.add(row["id"])
+                with self.lock:
+                    self.store.set_setting("alerted", json.dumps(sorted(seen)[-500:]))
 
     # ---- the owner's side
 
@@ -551,7 +594,8 @@ class Workspace:
                    "money": {"moved": money["moved"], "lost": money["lost"], "stopped": money["prevented"],
                              "ran": counts.get("executed", 0), "held": counts.get("pending", 0), "refused": counts.get("blocked", 0)},
                    "agent": self.hub.llm is not None,
-                   "mailbox": self.hub.mailer.public() if self.kind == "live" and self.hub.mailer else None,
+                   "mailbox": ({**self.hub.mailer.public(), "alerts": self.profile.alerts and bool(self.hub.owner_token)}
+                               if self.kind == "live" and self.hub.mailer else None),
                    "cast": self.cast(), "revealed": reveal,
                    "catalog": [{"key": k, "name": n, "price": str(p)} for k, (n, p) in demo.PRODUCTS.items()]}
             if self._private(reveal):
@@ -580,6 +624,8 @@ class Hub:
         self.broke: list[dict] = []
         self.mailer = None
         self.orders: list[float] = []
+        self.alert_times: list[float] = []
+        self.public_url = os.environ.get("PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
         self.live = Workspace(self, "live") if mode in ("live", "both") else None
 
     def allow_email(self):
@@ -624,6 +670,15 @@ class Hub:
             if len(self.orders) >= MAX_ORDERS_PER_HOUR:
                 raise HTTPException(429, "a lot of test orders were placed in the last hour, try again in a few minutes")
             self.orders.append(now)
+
+    def allow_alert(self) -> bool:
+        with self.lock:
+            now = time.time()
+            self.alert_times = [t for t in self.alert_times if now - t < 3600]
+            if len(self.alert_times) >= alerts.MAX_PER_HOUR:
+                return False
+            self.alert_times.append(now)
+            return True
 
     def is_owner(self, token: str | None) -> bool:
         return bool(self.owner_token and token and secrets.compare_digest(token.encode(), self.owner_token.encode()))
@@ -708,6 +763,7 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
             hub.mailer.stop.set()
 
     app = FastAPI(title="Countersign", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
+    app.state.hub = hub
 
     def shop(request: HttpRequest, response: Response) -> Workspace:
         if hub.live is not None and (hub.mode == "live" or request.cookies.get("cs_mode") != "practice"):
@@ -763,6 +819,49 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
     @app.post("/api/orders")
     def place_order(body: OrderIn, ws: Workspace = Depends(shop)):
         return ws.place_order(body)
+
+    # ---- the page the owner's alert email links to
+
+    private = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+
+    def review_target(action_id: int, sig: str):
+        """The shop and the waiting request behind a valid link, or the page to show instead."""
+        ws = hub.live
+        if ws is None or not hub.owner_token or not alerts.valid(hub.owner_token, action_id, sig):
+            return None, None, HTMLResponse(alerts.page("Link not valid", "<h1>This link is not valid</h1><p>It may have expired. Open the shop's page and approve from the queue instead.</p>"), 403, private)
+        row = ws.ledger.get(action_id)
+        if row is None:
+            return None, None, HTMLResponse(alerts.page("Not found", "<h1>Nothing here</h1>"), 404, private)
+        if row["status"] != "pending":
+            return None, None, HTMLResponse(alerts.page("Already decided", f"<h1>Already decided</h1><p>This request is {html.escape(row['status'])}.</p>"), 200, private)
+        return ws, row, None
+
+    @app.get("/review/{action_id}", response_class=HTMLResponse)
+    def review(action_id: int, sig: str = ""):
+        ws, row, other = review_target(action_id, sig)
+        return other or HTMLResponse(alerts.review_page(row, ws.store, ws.profile.shop_name, action_id, sig), 200, private)
+
+    @app.post("/review/{action_id}", response_class=HTMLResponse)
+    async def review_decide(action_id: int, request: HttpRequest):
+        form = parse_qs((await request.body()).decode("utf-8", "replace")[:2000])
+        sig, decision = (form.get("sig") or [""])[0], (form.get("decision") or [""])[0]
+        ws, row, other = review_target(action_id, sig)
+        if other:
+            return other
+        if decision not in ("approve", "reject"):
+            return HTMLResponse(alerts.page("Not understood", "<h1>Choose Approve or Refuse</h1>"), 400, private)
+        try:
+            res = await asyncio.to_thread(ws.decide, action_id, decision == "approve")
+        except HTTPException as e:
+            return HTMLResponse(alerts.page("Not done", f"<h1>That did not work</h1><p>{html.escape(str(e.detail))}</p>"), 409, private)
+        ref = (res.get("result") or {}).get("refund_id") or (res.get("result") or {}).get("payout_batch_id")
+        if res.get("status") == "executed":
+            text = "<h1>Approved</h1><p>It went to PayPal" + (f", reference {html.escape(str(ref))}" if ref else "") + ".</p>"
+        elif res.get("status") == "rejected":
+            text = "<h1>Refused</h1><p>Nothing was sent to PayPal.</p>"
+        else:
+            text = f"<h1>Not sent</h1><p>The checks run again before sending, and this time the answer was {html.escape(str(res.get('status')))}. Nothing was sent to PayPal.</p>"
+        return HTMLResponse(alerts.page("Done", text), 200, private)
 
     @app.post("/api/actions/{action_id}/approve")
     def approve(action_id: int, ws: Workspace = Depends(shop), x_owner_token: str | None = Header(None)):

@@ -763,7 +763,13 @@ function emailPane(pane) {
   const m = S.state && S.state.mailbox;
   if (m) pane.append(el("p", "sub", "The shop reads mail sent to " + m.address + " and emails the assistant's reply back to the sender. " + (m.ok ? "Connected." : "Not connected yet: " + (m.error || "checking...")) + " The receiving mail server's own sender check decides whether a sender counts as confirmed, and a reply only goes to a confirmed sender."));
   else pane.append(el("p", "sub", "Give the shop a mailbox by adding MAIL_USER and MAIL_PASSWORD (an app password) to the server's settings, or point your mail provider's inbound-email webhook at Countersign. Each message arrives with the receiving server's own sender check, which decides whether the sender counts as confirmed. Anything that fails the check is held for you, whatever address it claims."));
-  pane.append(el("pre", "code", "POST " + location.origin + "/api/inbound?token=YOUR_OWNER_TOKEN\n\n{\n  \"from\": \"customer@example.com\",\n  \"subject\": \"Order 10471\",\n  \"text\": \"The filters came crushed, could I have the $9.50 back?\",\n  \"authentication_results\": \"mx.example.net; dkim=pass; spf=pass; dmarc=pass\"\n}"));
+  if (m) {
+    const owner_to = (S.settings && S.settings.owner_email) || "the owner";
+    pane.append(switchRow("Email " + owner_to + " when a request is waiting for approval", "f-alerts", !S.settings || S.settings.alerts !== false));
+    pane.append(el("p", "note", "The email says what was asked, who asked and why it was held, with a link to a page where you approve or refuse it. The page asks before it does anything, and approving runs the checks again first. Changing this needs the owner token."));
+    const sv = el("button", "btn small", "Save"); sv.style.marginTop = "10px"; sv.onclick = () => save({ alerts: $("f-alerts").checked }, "Saved."); pane.append(sv);
+  }
+  pane.append(el("pre", "code", "POST " + location.origin + "/api/inbound\nX-Owner-Token: YOUR_OWNER_TOKEN\n\n{\n  \"from\": \"customer@example.com\",\n  \"subject\": \"Order 10471\",\n  \"text\": \"The filters came crushed, could I have the $9.50 back?\",\n  \"authentication_results\": \"mx.example.net; dkim=pass; spf=pass; dmarc=pass\"\n}"));
   pane.append(el("p", "note", "Replies are written and checked against the audit log before they leave. Send them with your mail provider's outbound API, or review them in the live shop's inbox first."));
 }
 async function paypalPane(pane) {

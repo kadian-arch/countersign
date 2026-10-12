@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Owner alerts: when a request is held the owner is emailed what it is, who asked and why, with a signed link to a page that approves or refuses it. Opening the link changes nothing, and approving runs the guard again.
+- The assistant's prompt in the live shop adds a greeting line. The prompt the recorded runs were measured with is unchanged and pinned by a test.
+- CI runs on a pinned Ubuntu image.
+
 ## 0.1.0
 
 First public version, built for the PayPal AI Hackathon.
