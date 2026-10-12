@@ -1,0 +1,21 @@
+name: Bug report
+description: Something does not work the way the README says it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: run
+    attributes:
+      label: How you ran it
+      description: The command, whether it was the PayPal sandbox shop or a practice shop, and your Python version. Do not paste keys, tokens or your .env.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output
+      render: text

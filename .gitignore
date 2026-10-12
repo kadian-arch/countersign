@@ -1,0 +1,16 @@
+.env
+*.env
+!.env.example
+.venv/
+__pycache__/
+*.egg-info/
+*.db
+*.log
+node_modules/
+
+# raw run output holds sandbox account addresses; the replays the site shows are exported from it, anonymised
+data/runs/
+data/result-*.json
+data/*.db
+data/stress/old/
+data/stress/*.txt
