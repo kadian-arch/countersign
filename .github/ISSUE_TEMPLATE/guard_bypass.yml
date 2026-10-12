@@ -1,0 +1,22 @@
+name: A request got past the guard
+description: A refund or payment ran that should have been held or refused (a rule in stress.py was broken)
+labels: [guard]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the report the project most wants. If the issue involves a real account or a real vulnerability in a deployment, use the private route in SECURITY.md instead.
+  - type: textarea
+    id: attempt
+    attributes:
+      label: The request
+      description: Who it came from (confirmed or not), the message, and the refund or payment it produced. The page's "Try the guard" form or `scripts/red_team.py` output is ideal.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+      description: Held, refused, or allowed, and which rule says so.
+    validations:
+      required: true

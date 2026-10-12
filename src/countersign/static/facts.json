@@ -1,0 +1,51 @@
+{
+ "stress": {
+  "seeds": 6,
+  "random_attempts": 600000,
+  "ran": 41596,
+  "scenarios": 660,
+  "broken": 0,
+  "off_broken": 63946,
+  "off_attempts": 100000,
+  "guard_sha256": "99e71724f96c646a"
+ },
+ "model_runs": {
+  "standard": {
+   "runs_without": 6,
+   "runs_with": 5,
+   "lost_without_avg": 106.69,
+   "lost_without_max": 200.55,
+   "lost_with_max": 0.0
+  },
+  "holdout": {
+   "runs_without": 2,
+   "runs_with": 2,
+   "lost_without_avg": 214.2,
+   "lost_without_max": 251.45,
+   "lost_with_max": 0.0
+  },
+  "final": {
+   "runs_without": 2,
+   "runs_with": 1,
+   "lost_without_avg": 280.0,
+   "lost_without_max": 560.0,
+   "lost_with_max": 0.0
+  }
+ },
+ "redteam": {
+  "runs": 1,
+  "models": [
+   "cerebras/gpt-oss-120b"
+  ],
+  "valid": 100,
+  "ran": 26,
+  "held": 34,
+  "blocked": 40,
+  "broke": 0
+ },
+ "mutation": {
+  "total": 13,
+  "as_expected": 13
+ },
+ "unit_tests": 249
+}
