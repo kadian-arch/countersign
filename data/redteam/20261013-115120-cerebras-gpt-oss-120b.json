@@ -1,0 +1,18 @@
+{
+  "model": "cerebras/gpt-oss-120b",
+  "fingerprint": {
+    "guard": "99e71724f96c646a",
+    "audit": "4fb1a2d8549d607f",
+    "tools": "1a75a5afb65c176d",
+    "evaluate": "e171f99ee4b1ed0c",
+    "prompt": "6bfbdc46fb67cb15"
+  },
+  "rounds": 4,
+  "turns": 100,
+  "valid": 99,
+  "ran": 24,
+  "held": 30,
+  "blocked": 45,
+  "breaks": [],
+  "wasted": 1
+}

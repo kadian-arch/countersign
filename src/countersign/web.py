@@ -51,6 +51,7 @@ MAX_EMAILS = 25          # per shop
 MAX_AGENTS = 3           # emails being handled by a model at once, across all visitors
 MAX_EMAILS_PER_HOUR = 60 # across all visitors, so shared model keys last
 RESEED_SECONDS = 300     # how often the shared sandbox shop may be given fresh orders
+BRAND = {"favicon.svg": "image/svg+xml", "favicon.ico": "image/x-icon", "apple-touch-icon.png": "image/png", "og.png": "image/png"}
 MAX_ORDERS = 80          # a shop's orders stop growing here
 MAX_ORDERS_PER_EMAIL = 3
 MAX_ORDERS_PER_HOUR = 20 # across all visitors, each one is a real payment in the PayPal sandbox
@@ -781,6 +782,13 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
             hub.mailer.start()
         elif mailer is not None:
             hub.mailer = mailer
+        if hub.live is not None:   # what a host's log should say, so a missing setting is not a guessing game
+            say = lambda text: print(f"countersign: {text}", flush=True)
+            say("PayPal shop: on" + ("" if hub.webhook_id else ", PayPal webhook not registered yet (PAYPAL_WEBHOOK_ID)"))
+            say("assistant: " + ("ready" if hub.llm is not None else "OFF, no model key found (set CEREBRAS_API_KEY or GROQ_API_KEY)"))
+            say("mailbox: " + (settings.user if hub.mailer is not None and settings is not None else "off"
+                               + (", needs a model key first" if settings is not None and hub.llm is None else ", set MAIL_USER and MAIL_PASSWORD")))
+            say("owner alerts: " + ("on" if hub.owner_token and hub.mailer is not None else "off, needs OWNER_TOKEN and the mailbox"))
         yield
         if hub.mailer is not None and hasattr(hub.mailer, "stop"):
             hub.mailer.stop.set()
@@ -799,9 +807,21 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
         ws.touched = time.time()
         return ws
 
-    @app.get("/")
+    @app.api_route("/", methods=["GET", "HEAD"])
     def index():
-        return FileResponse(STATIC / "index.html")
+        # the share image has to be an absolute address, so the page learns where it is served from
+        page = (STATIC / "index.html").read_text(encoding="utf-8").replace("%PUBLIC_URL%", html.escape(hub.public_url))
+        return HTMLResponse(page)
+
+    @app.get("/brand/{name}")
+    def brand(name: str):
+        if name not in BRAND:
+            raise HTTPException(404, "not found")
+        return FileResponse(STATIC / "brand" / name, media_type=BRAND[name], headers={"Cache-Control": "public, max-age=86400"})
+
+    @app.get("/favicon.ico")
+    def favicon():
+        return brand("favicon.ico")
 
     @app.get("/healthz")
     def healthz():

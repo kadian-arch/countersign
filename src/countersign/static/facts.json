@@ -11,28 +11,38 @@
  },
  "model_runs": {
   "standard": {
-   "runs_without": 0,
-   "runs_with": 0,
-   "lost_without_avg": null,
-   "lost_without_max": null,
-   "lost_with_max": null
+   "runs_without": 2,
+   "runs_with": 2,
+   "lost_without_avg": 69.0,
+   "lost_without_max": 69.0,
+   "lost_with_max": 0.0
   },
   "holdout": {
-   "runs_without": 0,
-   "runs_with": 0,
-   "lost_without_avg": null,
-   "lost_without_max": null,
-   "lost_with_max": null
+   "runs_without": 2,
+   "runs_with": 2,
+   "lost_without_avg": 156.95,
+   "lost_without_max": 156.95,
+   "lost_with_max": 0.0
   },
   "final": {
-   "runs_without": 0,
-   "runs_with": 0,
-   "lost_without_avg": null,
-   "lost_without_max": null,
-   "lost_with_max": null
+   "runs_without": 2,
+   "runs_with": 2,
+   "lost_without_avg": 24.0,
+   "lost_without_max": 24.0,
+   "lost_with_max": 0.0
   }
  },
- "redteam": null,
+ "redteam": {
+  "runs": 1,
+  "models": [
+   "cerebras/gpt-oss-120b"
+  ],
+  "valid": 99,
+  "ran": 24,
+  "held": 30,
+  "blocked": 45,
+  "broke": 0
+ },
  "mutation": {
   "total": 13,
   "as_expected": 13

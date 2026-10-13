@@ -160,6 +160,16 @@ class ShopMailTests(unittest.TestCase):
         self.assertLessEqual(len(hub.live.inbox), 25)
 
 
+class ModelKeyTests(unittest.TestCase):
+    def test_a_key_alone_is_enough_for_the_providers_the_demo_uses(self):
+        from countersign.llm import providers_from_env
+        env = {"LLM_PROVIDERS": "cerebras,groq,gemini", "CEREBRAS_API_KEY": "a", "GROQ_API_KEY": "b"}
+        found = {p.name: p.models for p in providers_from_env(env)}
+        self.assertEqual(found, {"cerebras": ["gpt-oss-120b"], "groq": ["openai/gpt-oss-120b"]})   # gemini has no key, so it is skipped
+        self.assertEqual(providers_from_env({**env, "CEREBRAS_MODELS": "x, y"})[0].models, ["x", "y"])
+        self.assertEqual(providers_from_env({"LLM_PROVIDERS": "cerebras"}), [])
+
+
 class SettingsTests(unittest.TestCase):
     def test_a_mailbox_needs_both_a_user_and_a_password(self):
         self.assertIsNone(Settings.from_env({}))

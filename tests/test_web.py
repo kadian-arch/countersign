@@ -53,6 +53,15 @@ class WebTests(unittest.TestCase):
     def test_the_page_and_state_load(self):
         self.assertIn("Countersign", self.c.get("/").text)
         self.assertEqual(self.c.get("/healthz").json(), {"ok": True})
+        self.assertEqual(self.c.head("/").status_code, 200)
+        page = self.c.get("/").text
+        self.assertIn('property="og:image" content="http://127.0.0.1:8000/brand/og.png"', page)
+        self.assertNotIn("%PUBLIC_URL%", page)
+        for name, kind in (("og.png", "image/png"), ("favicon.svg", "image/svg+xml"), ("apple-touch-icon.png", "image/png")):
+            got = self.c.get("/brand/" + name)
+            self.assertEqual((got.status_code, got.headers["content-type"]), (200, kind), name)
+        self.assertEqual(self.c.get("/favicon.ico").status_code, 200)
+        self.assertEqual(self.c.get("/brand/..%2Findex.html").status_code, 404)
         s = self.c.get("/api/state").json()
         self.assertEqual((s["mode"], s["pending"], s["ledger"]["intact"], s["agent"]), ("sim", [], True, False))
         self.assertEqual(s["money"], {"moved": "0", "lost": "0", "stopped": "0", "ran": 0, "held": 0, "refused": 0})

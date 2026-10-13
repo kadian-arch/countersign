@@ -15,7 +15,8 @@ BASE_URLS = {
     "cerebras": "https://api.cerebras.ai/v1",
     "openrouter": "https://openrouter.ai/api/v1",
 }
-DEFAULT_MODELS = {"gemini": "gemini-flash-latest,gemini-3.5-flash,gemini-3.1-flash-lite"}
+DEFAULT_MODELS = {"gemini": "gemini-flash-latest,gemini-3.5-flash,gemini-3.1-flash-lite",
+                  "cerebras": "gpt-oss-120b", "groq": "openai/gpt-oss-120b"}   # a key alone is enough, *_MODELS overrides
 RETRY_STATUS = {408, 429, 500, 502, 503, 504}
 
 # a limit that resets tomorrow, waiting a minute will not help

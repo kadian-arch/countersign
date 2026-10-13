@@ -36,4 +36,4 @@ Changelog = "https://github.com/kadian-arch/countersign/blob/main/CHANGELOG.md"
 where = ["src"]
 
 [tool.setuptools.package-data]
-countersign = ["static/*", "static/days/*"]
+countersign = ["static/*", "static/days/*", "static/brand/*"]

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Site icon and a share image for links (`scripts/make_brand.py` redraws them); the page tells chat and social sites where it is served from.
+- A model key alone is enough for Cerebras and Groq (default model names), and the server log says which of the model, mailbox, alerts and webhook are on.
+- Model runs are stamped with the version of the guard, checker, lookups, loss counting and prompt, and only matching runs are counted.
 - PayPal webhooks: verified with PayPal, handled once. The shop learns orders from captured payments, notices refunds made outside Countersign and counts them against the daily limit, tells the owner about disputes, and puts an invoice back to owed when PayPal denies the payout. A "Told by PayPal" panel on the page. `scripts/register_webhook.py` registers the server's address.
 - Owner alerts: when a request is held the owner is emailed what it is, who asked and why, with a signed link to a page that approves or refuses it. Opening the link changes nothing, and approving runs the guard again.
 - The assistant's prompt in the live shop adds a greeting line. The prompt the recorded runs were measured with is unchanged and pinned by a test.
