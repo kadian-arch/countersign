@@ -11,7 +11,7 @@ from countersign import holdout
 from countersign.final import final_inbox
 from countersign.inbox import inbox
 from countersign.paypal import PayPal
-from countersign.runs import Streak, latest_complete, load_runs, new_run_dir
+from countersign.runs import Streak, latest_complete, load_runs, new_run_dir, stale_count
 from countersign.seed import seed_demo
 from countersign.store import Store
 
@@ -38,6 +38,22 @@ class RunSelectionTests(unittest.TestCase):
             self.assertEqual(latest_complete(data, "guarded")["model"], "gemini/y")
             self.assertEqual(latest_complete(data, "guarded", "groq/x")["model"], "groq/x")
             self.assertIsNone(latest_complete(data, "open"))
+
+    def test_only_runs_made_with_the_current_guard_and_prompt_count_toward_the_numbers(self):
+        from countersign import fingerprint
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            save(data, "20261013-100000-open-a", mode="open", model="m", fingerprint=fingerprint.current())
+            save(data, "20261013-110000-open-b", mode="open", model="m", fingerprint={**fingerprint.current(), "guard": "an-older-guard"})
+            save(data, "20261013-120000-open-c", mode="open", model="m")   # from before runs were stamped
+            self.assertEqual([r["folder"] for r in load_runs(data, current=True)], ["20261013-100000-open-a"])
+            self.assertEqual(len(load_runs(data)), 3)
+            self.assertEqual(latest_complete(data, "open", current=True)["folder"], "20261013-100000-open-a")
+            self.assertEqual(stale_count(data), 2)
+
+    def test_the_fingerprint_follows_the_files_that_decide_an_outcome(self):
+        from countersign import fingerprint
+        self.assertEqual(set(fingerprint.current()), {"guard", "audit", "tools", "evaluate", "prompt"})
 
     def test_nothing_recorded_yet(self):
         with tempfile.TemporaryDirectory() as tmp:

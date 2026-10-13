@@ -52,6 +52,7 @@ class WebTests(unittest.TestCase):
 
     def test_the_page_and_state_load(self):
         self.assertIn("Countersign", self.c.get("/").text)
+        self.assertEqual(self.c.get("/healthz").json(), {"ok": True})
         s = self.c.get("/api/state").json()
         self.assertEqual((s["mode"], s["pending"], s["ledger"]["intact"], s["agent"]), ("sim", [], True, False))
         self.assertEqual(s["money"], {"moved": "0", "lost": "0", "stopped": "0", "ran": 0, "held": 0, "refused": 0})

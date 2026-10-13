@@ -187,6 +187,11 @@ section.block { padding: 60px 0 6px; scroll-margin-top: 72px; }
 .step.ran.wrong { color: var(--refuse); background: var(--refuse-soft); border-color: var(--refuse); }
 .reply { white-space: pre-wrap; font-size: 14px; border-left: 2px solid var(--line2); padding: 2px 0 2px 12px; margin: 10px 0 0; max-height: 240px; overflow: auto; }
 .empty { color: var(--muted); padding: 8px 2px; }
+.ppitem { display: flex; gap: 10px; align-items: baseline; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14.5px; line-height: 1.45; }
+.ppitem:first-child { border-top: 0; }
+.ppitem time { color: var(--muted); font: 500 12px var(--mono); flex: none; }
+.ppitem .tag { min-width: 104px; text-align: center; font: 600 10.5px var(--mono); padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line2); color: var(--muted); flex: none; text-transform: uppercase; letter-spacing: .04em; }
+.ppitem .tag.outside { color: var(--hold); border-color: var(--hold); }
 .qitem { padding: 14px 15px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--hold) 38%, transparent); background: var(--hold-soft); margin-bottom: 10px; animation: slidein .45s both; }
 .qitem .what { font-weight: 700; margin-bottom: 3px; } .qitem .why { color: var(--muted); font-size: 13.5px; margin-bottom: 10px; } .qitem .acts { display: flex; gap: 8px; }
 #grid { height: 330px; width: 100%; border-radius: 12px; overflow: hidden; }
@@ -359,6 +364,7 @@ footer .base { display: flex; flex-wrap: wrap; justify-content: space-between; g
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
         <div class="card pad"><h3 class="t">Waiting for you</h3><p class="sub">The guard holds anything it will not run by itself. Approving re-runs the guard first.</p>
           <div id="tokenrow" class="hidden"><label for="token">Owner token</label><input id="token" type="password" autocomplete="off"></div><div id="queue"></div></div>
+        <div class="card pad hidden" id="pp"><h3 class="t">Told by PayPal</h3><p class="sub" id="ppsub"></p><div id="ppfeed"></div></div>
         <div class="card pad"><h3 class="t">Activity</h3><p class="sub">Every refund and payment attempted, with the guard's verdict.</p><div id="grid"></div><p class="ledgerline" id="ledger"></p>
           <div class="visitors" id="visitors"></div><div class="cta" style="margin-top:12px"><button class="btn small" id="reset">Start this shop over</button></div><p class="note" id="resetnote"></p></div>
       </div>
@@ -501,6 +507,18 @@ function renderInbox(items) {
     box.append(card);
   });
 }
+function renderPaypal(p) {
+  const card = $("pp"); card.classList.toggle("hidden", !p); if (!p) return;
+  $("ppsub").textContent = p.webhook ? "PayPal sends this shop a message when a payment, refund, dispute or payout happens. The shop adds the orders it learns about, counts refunds made outside Countersign and tells the owner."
+    : "Not connected yet. Register this server's address with PayPal and set the webhook id, and PayPal's messages show up here.";
+  const box = $("ppfeed"); box.replaceChildren();
+  if (!p.events.length) { box.append(el("div", "empty", p.webhook ? "Nothing yet. It appears here the moment PayPal reports something." : "")); return; }
+  p.events.forEach(e => {
+    const row = el("div", "ppitem"), when = new Date(e.at);
+    row.append(el("time", "", isNaN(when) ? "" : when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })),
+      el("span", "tag " + e.origin, { countersign: "by Countersign", outside: "outside" }[e.origin] || e.kind), el("span", "", e.summary)); box.append(row);
+  });
+}
 function describe(a) {
   const g = a.args || {};
   return a.tool === "refund_payment" ? "Refund " + money(a.amount) + " on payment " + (g.capture_id || "?").slice(0, 14) : "Pay " + money(a.amount) + " to " + (g.receiver || "?") + (g.invoice_id ? " for invoice " + g.invoice_id : "");
@@ -555,7 +573,7 @@ function apply(s) {
   $("msend").disabled = !s.agent || !!s.resetting; $("noagent").classList.toggle("hidden", s.agent);
   $("note").textContent = live ? "This shop is connected to a PayPal sandbox account. A request the guard allows really goes to PayPal, and its PayPal reference shows in the activity."
     : "This is a private practice shop on a simulated PayPal. Nothing you do here is shared with anyone.";
-  renderTiles(s.money); renderQueue(s.pending); renderGrid(s.recent); renderInbox(s.inbox);
+  renderTiles(s.money); renderQueue(s.pending); renderGrid(s.recent); renderInbox(s.inbox); renderPaypal(s.paypal);
   $("inboxsub").textContent = (s.mailbox ? "Email this shop at " + s.mailbox.address + " and watch it here, or write a message below. The assistant reads it and replies."
     : "Write as a customer, a supplier or the owner. The assistant reads it and replies.") + (live ? " This shop is shared, so messages sent to it are visible to everyone who opens the page. Other people's addresses are hidden." : "");
   $("ordersub").textContent = live ? "Buy something from the shared shop with your own email address. It is a real payment in the PayPal sandbox, with no money involved. Then write to the shop from that address and ask for a refund."

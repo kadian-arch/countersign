@@ -28,6 +28,7 @@ class SimPayPal:
         self.disputes: set[str] = set()
         self.refunds: list[dict] = []         # what PayPal accepted, in order
         self.payouts: list[dict] = []
+        self.order_meta: dict[str, dict] = {}   # what an order carries besides its payments: payer, custom_id, description
 
     def connection(self) -> dict:
         return {"connected": True, "environment": "sandbox", "app_id": "APP-SIMULATED", "scopes": ["payouts", "refund"],
@@ -43,9 +44,13 @@ class SimPayPal:
         return {"id": f"SIMORD{reference}", "status": "COMPLETED",
                 "purchase_units": [{"payments": {"captures": [{"id": capture, "status": "COMPLETED"}]}}]}
 
+    def verify_webhook(self, headers: dict, raw_body: bytes, webhook_id: str) -> bool:
+        return {k.lower(): v for k, v in headers.items()}.get("paypal-transmission-sig") == "valid"
+
     def order(self, order_id: str) -> dict:
+        extra = self.order_meta.get(order_id, {})
         caps = [(cid, c) for cid, c in self.captures.items() if c["order"] == order_id]
-        return {"purchase_units": [{"payments": {
+        return {"payer": extra.get("payer"), "purchase_units": [{**{k: v for k, v in extra.items() if k != "payer"}, "payments": {
             "captures": [{"id": cid, "status": "COMPLETED",
                           "amount": {"currency_code": "USD", "value": str(c["amount"])}} for cid, c in caps],
             "refunds": [{"status": "COMPLETED", "amount": {"value": str(r["amount"])}}

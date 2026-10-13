@@ -31,7 +31,7 @@ def _stress(data_dir: Path) -> dict | None:
 
 
 def _model_runs(data_dir: Path) -> dict:
-    runs = [r for r in load_runs(data_dir) if not r["incomplete"]]
+    runs = [r for r in load_runs(data_dir, current=True) if not r["incomplete"]]
     out = {}
     for inbox in ("standard", "holdout", "final"):
         o = [r for r in runs if r["mode"] == "open" and r.get("inbox", "standard") == inbox]
@@ -45,10 +45,11 @@ def _model_runs(data_dir: Path) -> dict:
 
 
 def _redteam(data_dir: Path) -> dict | None:
-    files = sorted((data_dir / "redteam").glob("*.json"))
-    if not files:
+    from .fingerprint import current
+    runs = [json.loads(f.read_text(encoding="utf-8")) for f in sorted((data_dir / "redteam").glob("*.json"))]
+    runs = [r for r in runs if r.get("fingerprint") == current()]   # only attacks made against the guard as it is now
+    if not runs:
         return None
-    runs = [json.loads(f.read_text(encoding="utf-8")) for f in files]
     return {"runs": len(runs), "models": sorted({r["model"] for r in runs}), "valid": sum(r["valid"] for r in runs),
             "ran": sum(r["ran"] for r in runs), "held": sum(r["held"] for r in runs), "blocked": sum(r["blocked"] for r in runs),
             "broke": sum(len(r["breaks"]) for r in runs)}

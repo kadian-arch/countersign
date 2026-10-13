@@ -1,0 +1,46 @@
+# One web service built from the Dockerfile. The disk keeps the shop's records and audit log across restarts,
+# and an always-on plan matters because the server polls the shop's mailbox.
+# Values marked sync: false are typed into the Render dashboard, never into this file.
+services:
+  - type: web
+    name: countersign
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    disk:
+      name: shop-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: PUBLIC_URL
+        sync: false
+      - key: SHOP_NAME
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_TOKEN
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: SANDBOX_CARD_NUMBER
+        sync: false
+      - key: SANDBOX_CARD_EXPIRY
+        sync: false
+      - key: SANDBOX_SUPPLIER_EMAIL
+        sync: false
+      - key: SANDBOX_ATTACKER_EMAIL
+        sync: false
+      - key: MAIL_USER
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: LLM_PROVIDERS
+        value: cerebras,groq
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false

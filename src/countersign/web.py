@@ -25,7 +25,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request as HttpRequ
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import alerts
+from . import alerts, webhooks
 from . import demo_data as demo
 from . import emails, mailbox
 from . import profile as profiles
@@ -445,6 +445,26 @@ class Workspace:
                 with self.lock:
                     self.store.set_setting("alerted", json.dumps(sorted(seen)[-500:]))
 
+    def tell_owner(self, subject: str, text: str):
+        """A short email to the owner about something PayPal reported. Shares the hourly limit with the approval alerts."""
+        mailer = self.hub.mailer
+        if self.kind == "live" and self.profile.alerts and mailer is not None and hasattr(mailer, "send_alert") and self.hub.allow_alert():
+            try:
+                mailer.send_alert(self.profile.owner_email, subject, text)
+            except Exception as e:
+                mailer.error = f"could not email the owner: {str(e)[:80]}"
+
+    # ---- what PayPal reports
+
+    def paypal_event(self, event: dict) -> bool:
+        paypal = self.paypal or self.sim.paypal
+        handler = webhooks.Handler(paypal, self.store, self.ledger, self.tell_owner, self.hub.webhook_wait)
+        new = handler.handle(event)
+        if new:
+            with self.lock:
+                self.bump()
+        return new
+
     # ---- the owner's side
 
     def decide(self, action_id: int, approve: bool) -> dict:
@@ -597,6 +617,7 @@ class Workspace:
                    "mailbox": ({**self.hub.mailer.public(), "alerts": self.profile.alerts and bool(self.hub.owner_token)}
                                if self.kind == "live" and self.hub.mailer else None),
                    "cast": self.cast(), "revealed": reveal,
+                   "paypal": ({"webhook": bool(self.hub.webhook_id), "events": self.store.events(12)} if self.kind == "live" else None),
                    "catalog": [{"key": k, "name": n, "price": str(p)} for k, (n, p) in demo.PRODUCTS.items()]}
             if self._private(reveal):
                 out["inbox"] = [{**i, "sender": mask(i["sender"])} for i in out["inbox"]]
@@ -626,6 +647,8 @@ class Hub:
         self.orders: list[float] = []
         self.alert_times: list[float] = []
         self.public_url = os.environ.get("PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
+        self.webhook_id = os.environ.get("PAYPAL_WEBHOOK_ID", "")
+        self.webhook_wait = 1.5   # seconds to let our own ledger catch up before calling a refund someone else's
         self.live = Workspace(self, "live") if mode in ("live", "both") else None
 
     def allow_email(self):
@@ -780,6 +803,10 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
     def index():
         return FileResponse(STATIC / "index.html")
 
+    @app.get("/healthz")
+    def healthz():
+        return {"ok": True}
+
     @app.get("/api/state")
     def state(ws: Workspace = Depends(shop), x_owner_token: str | None = Header(None)):
         return ws.state(hub.is_owner(x_owner_token))
@@ -819,6 +846,29 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
     @app.post("/api/orders")
     def place_order(body: OrderIn, ws: Workspace = Depends(shop)):
         return ws.place_order(body)
+
+    @app.post("/api/paypal/webhook")
+    async def paypal_webhook(request: HttpRequest):
+        """PayPal's own messages. Anyone can send to this address, so nothing is believed until PayPal confirms
+        the message is genuine and meant for this webhook."""
+        ws = hub.live
+        if ws is None or not hub.webhook_id:
+            raise HTTPException(503, "this server is not set up to receive PayPal webhooks")
+        raw = await request.body()
+        if len(raw) > 200_000:
+            raise HTTPException(413, "too large")
+        paypal = ws.paypal or ws.sim.paypal
+        if not await asyncio.to_thread(paypal.verify_webhook, dict(request.headers), raw, hub.webhook_id):
+            raise HTTPException(400, "could not verify this message with PayPal")
+        try:
+            event = json.loads(raw)
+        except ValueError:
+            raise HTTPException(400, "not JSON")
+        try:
+            new = await asyncio.to_thread(ws.paypal_event, event)
+        except Exception:
+            raise HTTPException(500, "could not handle this message yet, please send it again")
+        return {"ok": True, "new": new}
 
     # ---- the page the owner's alert email links to
 

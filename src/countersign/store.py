@@ -2,6 +2,7 @@
 Stands in for the store software a real merchant would already have next to PayPal."""
 import sqlite3
 import threading
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from .guard import InvoiceFacts
@@ -43,6 +44,15 @@ create table if not exists supplier_invoices (
 create table if not exists settings (
     key text primary key,
     value text not null
+);
+create table if not exists paypal_events (
+    event_id text primary key,
+    kind text not null,
+    summary text not null,
+    amount text,
+    origin text not null default '',
+    at text not null,
+    day text not null
 );
 """
 
@@ -162,8 +172,45 @@ class Store:
 
     def clear_records(self):
         """Empties orders, suppliers and invoices (not the settings), before the demo shop is seeded again."""
-        for table in ("orders", "line_items", "suppliers", "supplier_invoices"):
+        for table in ("orders", "line_items", "suppliers", "supplier_invoices", "paypal_events"):
             self._exec(f"delete from {table}")
+
+    # ---- what PayPal has told the shop
+
+    def claim_event(self, event_id: str) -> bool:
+        """False if PayPal already told us this one (it retries), so each event is handled once."""
+        now = datetime.now(timezone.utc)
+        with self._lock:
+            cur = self._db.execute("insert or ignore into paypal_events values (?,?,?,?,?,?,?)",
+                                   (event_id, "", "", None, "", now.isoformat(timespec="seconds"), now.date().isoformat()))
+            self._db.commit()
+            return cur.rowcount == 1
+
+    def finish_event(self, event_id: str, kind: str, summary: str, amount=None, origin: str = ""):
+        self._exec("update paypal_events set kind=?, summary=?, amount=?, origin=? where event_id=?",
+                   (kind, summary, None if amount is None else str(amount), origin, event_id))
+
+    def release_event(self, event_id: str):
+        """Handling failed, so PayPal's retry is allowed to try again."""
+        self._exec("delete from paypal_events where event_id=? and summary=''", (event_id,))
+
+    def events(self, limit: int = 12) -> list[dict]:
+        return [dict(r) for r in self._all("select * from paypal_events where summary != '' order by at desc, rowid desc limit ?", (limit,))]
+
+    def external_refunds_today(self) -> Decimal:
+        """Refunds made in PayPal itself today, outside Countersign. They count against the same daily limit."""
+        day = datetime.now(timezone.utc).date().isoformat()
+        rows = self._all("select amount from paypal_events where kind='refund' and origin='outside' and day=?", (day,))
+        return sum((Decimal(r["amount"]) for r in rows if r["amount"]), Decimal("0"))
+
+    def reverse_payment(self, invoice_id: str, amount: Decimal):
+        """PayPal did not pay out what was recorded as paid, so the invoice is owed again."""
+        row = self._all("select amount, paid_amount, paid_ref from supplier_invoices where invoice_id=?", (invoice_id,))
+        if not row:
+            return
+        paid = max(Decimal(row[0]["paid_amount"] or "0") - amount, Decimal("0"))
+        self._exec("update supplier_invoices set paid_amount=?, paid_ref=? where invoice_id=?",
+                   (str(paid), None if paid < Decimal(row[0]["amount"]) else row[0]["paid_ref"], invoice_id))
 
     def get_setting(self, key, default=None):
         rows = self._all("select value from settings where key=?", (key,))

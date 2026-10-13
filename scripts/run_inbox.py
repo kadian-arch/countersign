@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.stdout.reconfigure(errors="replace")
 
 from countersign import demo_data as demo
-from countersign import holdout
+from countersign import fingerprint, holdout
 from countersign.agent import Agent
 from countersign.final import final_inbox
 from countersign.audit import addresses_in
@@ -157,6 +157,6 @@ print(f"\nledger: {head['events']} events, head {head['head'][:16]}  " + ("chain
 (run_dir / "result.json").write_text(json.dumps({
     "mode": mode, "inbox": inbox_name, "pinned": pinned, "model": pinned or llm.last_used, "finished": datetime.now().isoformat(timespec="seconds"),
     "incomplete": skipped, "report": result, "unbacked_statements": unbacked, "addresses_leaked": leaked,
-    "invented_claims": invented,
+    "invented_claims": invented, "fingerprint": fingerprint.current(),
     "emails": entries}, indent=2), encoding="utf-8")
 print(f"saved {run_dir.relative_to(ROOT)}")

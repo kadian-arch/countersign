@@ -5,7 +5,8 @@
     python scripts/compare_runs.py --model groq/openai/gpt-oss-120b     only runs pinned to that model
     python scripts/compare_runs.py --inbox holdout   the second inbox instead of the standard one
 
-Incomplete runs are always ignored.
+Incomplete runs are always ignored, and so are runs made with an earlier version of the guard, reply checker,
+lookups, loss counting or prompt (see fingerprint.py).
 """
 import sys
 from decimal import Decimal
@@ -15,7 +16,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from countersign.config import ROOT
 from countersign.report import what_happened
-from countersign.runs import latest_complete, load_runs
+from countersign.runs import latest_complete as _latest, load_runs as _load, stale_count
+
+
+def load_runs(data_dir):
+    return _load(data_dir, current=True)   # only runs made with the guard and prompt as they are now
+
+
+def latest_complete(*args):
+    return _latest(*args, current=True)
 
 pinned, inbox = None, "standard"
 for i, arg in enumerate(sys.argv):

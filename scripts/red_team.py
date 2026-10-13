@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.stdout.reconfigure(errors="replace")
 
+from countersign import fingerprint
 from countersign.config import ROOT, load_env
 from countersign.llm import LLM, LLMUnavailable, pinned_provider
 from countersign.redteam import play
@@ -50,5 +51,5 @@ for b in result["breaks"]:
 folder = ROOT / "data" / "redteam"
 folder.mkdir(parents=True, exist_ok=True)
 file = folder / f"{datetime.now():%Y%m%d-%H%M%S}-{model.replace('/', '-')}.json"
-file.write_text(json.dumps({"model": model, **result}, indent=2), encoding="utf-8")
+file.write_text(json.dumps({"model": model, "fingerprint": fingerprint.current(), **result}, indent=2), encoding="utf-8")
 print(f"saved {file.relative_to(ROOT)}")

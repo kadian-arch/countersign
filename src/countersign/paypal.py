@@ -1,4 +1,5 @@
 import base64
+import json
 import time
 import uuid
 from decimal import Decimal
@@ -102,6 +103,24 @@ class PayPal:
         body = self.request("GET", f"/v1/customer/disputes?disputed_transaction_id={transaction_id}")
         return body.get("items", [])
 
+    def verify_webhook(self, headers: dict, raw_body: bytes, webhook_id: str) -> bool:
+        """Asks PayPal whether this message really came from PayPal, for this webhook. The body goes in exactly as
+        received, because the signature covers it byte for byte."""
+        h = {k.lower(): v for k, v in headers.items()}
+        wanted = {"auth_algo": "paypal-auth-algo", "cert_url": "paypal-cert-url", "transmission_id": "paypal-transmission-id",
+                  "transmission_sig": "paypal-transmission-sig", "transmission_time": "paypal-transmission-time"}
+        if any(k not in h for k in wanted.values()):
+            return False
+        head = {name: h[key] for name, key in wanted.items()}
+        body = ('{' + ",".join(f"{json.dumps(k)}:{json.dumps(v)}" for k, v in head.items())
+                + f',"webhook_id":{json.dumps(webhook_id)},"webhook_event":' + raw_body.decode("utf-8") + '}')
+        try:
+            r = self._http.post("/v1/notifications/verify-webhook-signature", content=body,
+                                headers={"Authorization": f"Bearer {self._bearer()}", "Content-Type": "application/json"})
+            return r.status_code == 200 and r.json().get("verification_status") == "SUCCESS"
+        except Exception:
+            return False
+
 
 class LiveFacts:
     """Guard facts read from PayPal, the shop's records and the ledger."""
@@ -133,4 +152,7 @@ class LiveFacts:
         return self.store.known_payees()
 
     def executed_today(self, tool, key=None):
-        return self.ledger.total_today(tool, key)
+        total = self.ledger.total_today(tool, key)
+        if tool == "refund_payment" and key is None:   # a refund made in PayPal itself uses up the same daily limit
+            total += self.store.external_refunds_today()
+        return total

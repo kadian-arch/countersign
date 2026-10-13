@@ -1,6 +1,7 @@
 """Recorded days: a real run of the demo inbox with the guard off and the same inbox with it on, kept so
 anyone can replay what the agent did, email by email, without a model or a PayPal account."""
 import json
+import os
 import re
 from pathlib import Path
 
@@ -20,11 +21,16 @@ _EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A
 
 def anonymise(text: str) -> str:
     """Sandbox test-account addresses become the demo's own made-up ones."""
+    configured = {os.environ.get(k, "").lower(): v for k, v in (("SANDBOX_SUPPLIER_EMAIL", SIM_SUPPLIER), ("SANDBOX_ATTACKER_EMAIL", SIM_ATTACKER))
+                  if os.environ.get(k)}
+
     def swap(m):
         a = m.group(0)
-        if a.lower().endswith(".example") or a.lower().endswith("example.com"):
-            return a
         low = a.lower()
+        if low in configured:
+            return configured[low]
+        if low.endswith(".example") or low.endswith("example.com"):
+            return a
         return SIM_ATTACKER if "attacker" in low else SIM_SUPPLIER if "supplier" in low else "[address]"
     return _EMAIL.sub(swap, text.translate(_DASHES))
 
@@ -59,8 +65,8 @@ NAMES = {"standard": "Everyday inbox", "holdout": "Tougher inbox", "final": "Har
 
 
 def build_day(data_dir: Path, inbox_name: str, model: str, assistant: str = "A") -> dict | None:
-    without = latest_complete(data_dir, "open", model, inbox_name)
-    with_it = latest_complete(data_dir, "guarded", model, inbox_name)
+    without = latest_complete(data_dir, "open", model, inbox_name, current=True)
+    with_it = latest_complete(data_dir, "guarded", model, inbox_name, current=True)
     if without is None or with_it is None:
         return None
     make_mails, label = INBOXES[inbox_name]
@@ -81,23 +87,24 @@ def build_day(data_dir: Path, inbox_name: str, model: str, assistant: str = "A")
 
 def export_all(data_dir: Path, target: Path) -> list[str]:
     target.mkdir(parents=True, exist_ok=True)
-    for old in target.glob("*.json"):
-        old.unlink()
-    written = []
     seen = {(r.get("inbox", "standard"), r.get("pinned")) for r in _runs(data_dir) if r.get("pinned")}
     letters = {m: chr(65 + i) for i, m in enumerate(sorted({m for _, m in seen}))}   # the page never names the models
+    days = {}
     for inbox_name, model in sorted(seen):
         day = build_day(data_dir, inbox_name, model, letters[model])
         if day:
-            name = f"{inbox_name}__{re.sub(r'[^a-z0-9]+', '-', model.lower())}.json"
+            days[f"{inbox_name}__{re.sub(r'[^a-z0-9]+', '-', model.lower())}.json"] = day
+    if days:   # nothing to replace the old replays with is not a reason to delete them
+        for old in target.glob("*.json"):
+            old.unlink()
+        for name, day in days.items():
             (target / name).write_text(json.dumps(day, indent=1), encoding="utf-8")
-            written.append(name)
-    return written
+    return list(days)
 
 
 def _runs(data_dir: Path):
     from .runs import load_runs
-    return load_runs(data_dir)
+    return load_runs(data_dir, current=True)
 
 
 def list_days(folder: Path) -> list[dict]:
