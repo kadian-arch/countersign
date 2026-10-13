@@ -1,14 +1,21 @@
 version: 2
 updates:
+  # the project asks for broad version ranges on purpose, so a newer release is not a reason to raise the floor;
+  # security updates for these still arrive on their own
   - package-ecosystem: pip
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    open-pull-requests-limit: 0
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+  # the image stays on the Python the tests run against (3.11 to 3.13 in CI)
   - package-ecosystem: docker
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    ignore:
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
