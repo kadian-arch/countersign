@@ -117,7 +117,11 @@ class WebhookTests(Base):
         capture = self.ws.store.get_order("10472")["capture_id"]
         self.send(refund_event("E3", "REF-OUTSIDE", capture, "20.00"))
         self.assertEqual(self.events()[0]["origin"], "outside")
-        self.assertEqual(self.alerts(), ["Refund of $20.00 on order #10472, made in PayPal outside Countersign"])
+        self.assertEqual(self.alerts(), ["Refund made outside Countersign: $20.00 on order #10472"])
+        body = self.mail.alerts[0][2]
+        self.assertIn("$20.00 of today's $200.00 refund limit is used", body)   # the day's limit, not just the fact
+        self.assertIn("rotate the app's credentials", body)
+        self.assertIn("<table", self.mail.html)
         self.assertEqual(self.ws.store.external_refunds_today(), Decimal("20.00"))
         self.c.put("/api/settings", json={"policy": {"refund_day_max": 25}}, headers=OWNER)
         held = self.c.post("/api/submit", json=DANA).json()
@@ -129,7 +133,7 @@ class WebhookTests(Base):
         self.send({"id": "E4", "event_type": "CUSTOMER.DISPUTE.CREATED", "resource": {
             "dispute_amount": {"value": "22.95"}, "disputed_transactions": [{"seller_transaction_id": capture}]}})
         self.assertEqual(self.events()[0]["summary"], "A customer opened a dispute of $22.95 on order #10473")
-        self.assertEqual(self.alerts(), ["A customer opened a dispute of $22.95 on order #10473"])
+        self.assertEqual(self.alerts(), ["A customer opened a dispute: $22.95 on order #10473"])
 
     def test_a_payout_paypal_denies_puts_the_invoice_back_to_owed(self):
         contact = {"sender": "marta@eastgate-packaging.example", "tool": "send_payout", "receiver": "accounts@eastgate-packaging.example",

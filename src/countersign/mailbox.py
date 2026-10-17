@@ -173,12 +173,14 @@ class Mailbox:
         self.sent[incoming.sender.lower()] = recent + [now]
         self._send(compose_reply(self.settings, self.shop_name(), incoming, text))
 
-    def send_alert(self, to: str, subject: str, text: str):
-        """A message from the shop to its owner, not an answer to anyone."""
+    def send_alert(self, to: str, subject: str, text: str, html: str | None = None):
+        """A message from the shop to its owner, not an answer to anyone. Plain text, and HTML beside it when there is some."""
         mail = EmailMessage()
         mail["From"], mail["To"], mail["Subject"] = formataddr((self.shop_name(), self.settings.user)), to, subject
         mail["Auto-Submitted"] = "auto-generated"
         mail.set_content(text)
+        if html:
+            mail.add_alternative(html, subtype="html")
         self._send(mail)
 
     def _send(self, message: EmailMessage):

@@ -50,6 +50,22 @@ class WebTests(unittest.TestCase):
         sid = (client or self.c).cookies["cs_sid"]
         return self.app.state.hub.sessions[sid]
 
+    def test_the_dashboard_is_served_from_its_build_and_says_so_when_there_is_none(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            built = Path(tmp) / "dashboard"
+            with mock.patch("countersign.web.DASHBOARD", built):
+                self.assertEqual(self.c.get("/dashboard/").status_code, 404)
+                (built / "assets").mkdir(parents=True)
+                (built / "index.html").write_text("<p>dash</p>", encoding="utf-8")
+                (built / "assets" / "a.js").write_text("1", encoding="utf-8")
+                (Path(tmp) / "secret.txt").write_text("no", encoding="utf-8")
+                self.assertEqual((self.c.get("/dashboard/").text, self.c.get("/dashboard/assets/a.js").text), ("<p>dash</p>", "1"))
+                self.assertEqual(self.c.get("/dashboard/some/page").text, "<p>dash</p>")   # the app routes itself
+                self.assertEqual(self.c.get("/dashboard/..%2fsecret.txt").text, "<p>dash</p>")   # never a file outside the build
+                self.assertEqual(self.c.get("/dashboard", follow_redirects=False).status_code, 307)
+
     def test_the_page_and_state_load(self):
         self.assertIn("Countersign", self.c.get("/").text)
         self.assertEqual(self.c.get("/healthz").json(), {"ok": True})

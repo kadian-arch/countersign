@@ -66,7 +66,7 @@ class Handler:
             self.store.release_event(event_id)
             raise
         if alert and self.tell:
-            self.tell(summary, f"{summary}.\n\nThis came from PayPal. The shop's page has the details.\n")
+            self.tell(summary, alert)
         return True
 
     @staticmethod
@@ -104,14 +104,18 @@ class Handler:
             if not capture_id or not self.store.order_by_capture(capture_id):
                 return self._ignored()   # a refund on a payment this shop has no record of is not its business
             where = self._order_text(capture_id)
+            order_no = self.store.order_by_capture(capture_id)["order_no"]
             refund_id = res.get("id")
             if self._mine(lambda r: r["tool"] == "refund_payment" and (r.get("result") or {}).get("refund_id") == refund_id):
                 return "refund", f"Refund of ${amount}{where}, made by Countersign", amount, "countersign", False
-            return "refund", f"Refund of ${amount}{where}, made in PayPal outside Countersign", amount, "outside", True
-        if not self.store.order_by_capture(capture_id):
+            return ("refund", f"Refund of ${amount}{where}, made in PayPal outside Countersign", amount, "outside",
+                    {"kind": "refund_outside", "amount": amount, "order": order_no})
+        known = self.store.order_by_capture(capture_id)
+        if not known:
             return self._ignored()
         what = {"DENIED": "was denied", "REVERSED": "was reversed"}.get(kind.rsplit(".", 1)[-1], "changed")
-        return "payment", f"A payment of ${amount}{self._order_text(capture_id)} {what}", amount, "", kind.endswith(".REVERSED")
+        return ("payment", f"A payment of ${amount}{self._order_text(capture_id)} {what}", amount, "",
+                {"kind": "payment_reversed", "amount": amount, "order": known["order_no"]} if kind.endswith(".REVERSED") else False)
 
     def _learn_order(self, capture_id, amount: Decimal, res: dict) -> str | None:
         """A payment the shop has no record of: read the order from PayPal and add it, if it is this shop's."""
@@ -143,12 +147,14 @@ class Handler:
     def _dispute(self, kind: str, res: dict):
         amount = _money((res.get("dispute_amount") or {}).get("value"))
         transaction = ((res.get("disputed_transactions") or [{}])[0]).get("seller_transaction_id")
-        if not transaction or not self.store.order_by_capture(transaction):
+        known = self.store.order_by_capture(transaction) if transaction else None
+        if not known:
             return self._ignored()
         where = self._order_text(transaction)
         step = kind.rsplit(".", 1)[-1]
         if step == "CREATED":
-            return "dispute", f"A customer opened a dispute of ${amount}{where}", amount, "", True
+            return ("dispute", f"A customer opened a dispute of ${amount}{where}", amount, "",
+                    {"kind": "dispute", "amount": amount, "order": known["order_no"]})
         if step == "RESOLVED":
             return "dispute", f"The dispute{where} was resolved", amount, "", False
         return "dispute", f"The dispute{where} was updated", amount, "", False
@@ -162,15 +168,18 @@ class Handler:
             return self._ignored()   # a payout this shop did not send
         if kind.startswith("PAYMENT.PAYOUTSBATCH."):
             status = str(header.get("batch_status") or kind.rsplit(".", 1)[-1]).upper()
-            return "payout", f"Payout batch {batch[:12]} {status.lower()}", None, "", status in PAYOUT_TROUBLE
+            return ("payout", f"Payout batch {batch[:12]} {status.lower()}", None, "",
+                    {"kind": "payout_batch", "status": status} if status in PAYOUT_TROUBLE else False)
         item = res.get("payout_item") or {}
         status = str(res.get("transaction_status") or kind.rsplit(".", 1)[-1]).upper()
         amount = _money((item.get("amount") or {}).get("value"))
         invoice = str(item.get("sender_item_id") or "")
         to = _plain(item.get("receiver"), 80, "a supplier")
+        info = {"amount": amount, "invoice": invoice or None, "to": to, "status": status}
         if status in PAYOUT_LOST and invoice and self.store.invoice_row(invoice):
             self.store.reverse_payment(invoice, amount)
-            return "payout", f"Payment of ${amount} to {to} was {status.lower()}, so invoice {invoice} is owed again", amount, "", True
+            return ("payout", f"Payment of ${amount} to {to} was {status.lower()}, so invoice {invoice} is owed again", amount, "",
+                    {"kind": "payout_lost", **info})
         if status in PAYOUT_TROUBLE:   # held or unclaimed money can still arrive, so the invoice is left alone
-            return "payout", f"Payment of ${amount} to {to} is {status.lower()}", amount, "", True
+            return "payout", f"Payment of ${amount} to {to} is {status.lower()}", amount, "", {"kind": "payout_trouble", **info}
         return "payout", f"Payment of ${amount} to {to} {status.lower()}", amount, "", False

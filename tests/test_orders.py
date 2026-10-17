@@ -68,6 +68,16 @@ class SharedShopTests(unittest.TestCase):
         self.assertNotIn("dana.whitfield@example.com", everything)
         self.assertIn("v***@example.com", everything)
 
+    def test_the_dashboard_feed_hides_them_too_and_carries_the_other_tables(self):
+        feed = self.c.get("/api/analytics").json()
+        self.assertNotIn("vera.lindqvist@example.com", json.dumps(feed))
+        self.assertEqual([a["requested_by"] for a in feed["actions"]], ["v***@example.com"])
+        self.assertEqual({"actions", "reasons", "events", "orders", "totals", "shop"} <= set(feed), True)
+        self.assertEqual(feed["actions"][0]["outcome"], "Ran")
+        self.assertTrue(all("customer_email" not in o for o in feed["orders"]))   # orders carry no customer details at all
+        shown = self.c.get("/api/analytics", headers={"X-Owner-Token": "secret"}).json()
+        self.assertEqual(shown["actions"][0]["requested_by"], "vera.lindqvist@example.com")
+
     def test_the_owner_token_shows_them(self):
         s = self.c.get("/api/state", headers={"X-Owner-Token": "secret"}).json()
         self.assertTrue(s["revealed"])

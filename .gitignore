@@ -15,3 +15,6 @@ data/result-*.json
 data/*.db
 data/stress/old/
 data/stress/*.txt
+
+# the dashboard is built from dashboard/ (see Dockerfile), not committed
+src/countersign/static/dashboard/

@@ -99,12 +99,15 @@ class LLM:
         self.http = httpx.Client(timeout=httpx.Timeout(60, connect=10), transport=transport)
         self.last_used: str | None = None
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+    def chat(self, messages: list[dict], tools: list[dict] | None = None, patient: bool = True) -> dict:
+        """patient=False is for someone waiting at a screen: a rate limit moves on to the next model at once
+        instead of waiting it out."""
+        waits_allowed = self.rate_waits if patient else 0
         tried = []
         for p in self.providers:
             for model in p.models:
                 failures = waits = 0
-                while failures < self.attempts and waits <= self.rate_waits:
+                while failures < self.attempts and waits <= waits_allowed:
                     body = {"model": model, "messages": messages}
                     if tools:
                         body["tools"] = tools
@@ -126,7 +129,7 @@ class LLM:
                             self.notify(f"{p.name}/{model}: daily quota used up, skipping it")
                             break
                         waits += 1
-                        if waits > self.rate_waits:
+                        if waits > waits_allowed:
                             break
                         delay = _retry_after(r, waits)
                         self.notify(f"rate limited on {p.name}/{model}, waiting {delay:.0f}s")

@@ -22,10 +22,10 @@ from typing import Literal
 from urllib.parse import parse_qs, urlparse
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request as HttpRequest, Response
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import alerts, tidy, toolkit, webhooks
+from . import alerts, studio, tidy, toolkit, webhooks
 from . import demo_data as demo
 from . import emails, mailbox
 from . import profile as profiles
@@ -44,6 +44,7 @@ from .runtime import Runtime
 from .stress import Judge
 
 STATIC = Path(__file__).parent / "static"
+DASHBOARD = STATIC / "dashboard"   # the built AG Studio dashboard (see dashboard/ in the repo), absent until it is built
 MAX_ACTIONS = 400        # a visitor's shop starts over before it grows without bound
 MAX_SESSIONS = 300
 SESSION_SECONDS = 2 * 3600
@@ -55,6 +56,8 @@ BRAND = {"favicon.svg": "image/svg+xml", "favicon.ico": "image/x-icon", "apple-t
 MAX_ORDERS = 80          # a shop's orders stop growing here
 MAX_ORDERS_PER_EMAIL = 3
 MAX_ORDERS_PER_HOUR = 20 # across all visitors, each one is a real payment in the PayPal sandbox
+MAX_STUDIO_PER_HOUR = 80 # dashboard assistant turns across all visitors, so the shared model keys last
+MAX_STUDIO_PER_VISITOR = 20
 
 
 def mask(address: str | None) -> str | None:
@@ -442,9 +445,9 @@ class Workspace:
                 if not self.hub.allow_alert():   # the rest stay in the queue and go out with the next alert
                     break
                 link = f"{self.hub.public_url}/review/{row['id']}?sig={alerts.sign(self.hub.owner_token, row['id'])}"
-                subject, text = alerts.compose(row, self.store, shop, link, len(pending) - 1)
+                subject, text, page_html = alerts.compose(row, self.store, shop, link, len(pending) - 1)
                 try:
-                    self.hub.mailer.send_alert(owner, subject, text)
+                    self.hub.mailer.send_alert(owner, subject, text, page_html)
                 except Exception as e:   # not marked as told, so the next alert tries again
                     self._noted(False, str(e)[:80])
                     break
@@ -458,12 +461,19 @@ class Workspace:
         self.hub.mailer.last_alert = {"at": time.time(), "ok": ok, "error": error}
         print(f"countersign: owner alert {'sent' if ok else 'FAILED: ' + str(error)}", flush=True)
 
-    def tell_owner(self, subject: str, text: str):
-        """A short email to the owner about something PayPal reported. Shares the hourly limit with the approval alerts."""
+    def tell_owner(self, summary: str, info: dict):
+        """An email to the owner about something PayPal reported. Shares the hourly limit with the approval alerts."""
         mailer = self.hub.mailer
         if self.kind == "live" and self.profile.alerts and mailer is not None and hasattr(mailer, "send_alert") and self.hub.allow_alert():
+            day = None
+            if info.get("kind") == "refund_outside":   # how much of today's refund limit this just used
+                try:
+                    day = {"used": self.runtime.guard.facts.executed_today("refund_payment"), "limit": self.profile.policy.refund_day_max}
+                except Exception:
+                    day = None
             try:
-                mailer.send_alert(self.profile.owner_email, subject, text)
+                subject, text, page_html = alerts.compose_notice(self.profile.shop_name, summary, info, self.hub.public_url + "/#shop", day)
+                mailer.send_alert(self.profile.owner_email, subject, text, page_html)
                 self._noted(True)
             except Exception as e:
                 self._noted(False, str(e)[:80])
@@ -573,11 +583,17 @@ class Workspace:
             self.bump()
         return {"status": "ok"}
 
-    def analytics(self) -> dict:
-        """Flat rows for dashboards and charts: what was attempted, what the guard said, and why."""
+    def analytics(self, reveal: bool = False) -> dict:
+        """Flat tables for the dashboard: what was attempted and what the guard said (actions), why requests were held or
+        refused (reasons), what PayPal reported (events) and the shop's orders. Other visitors' addresses are hidden
+        on the shared shop, as everywhere else."""
+        outcome = {"executed": "Ran", "pending": "Held", "blocked": "Refused", "failed": "Failed", "rejected": "Declined by the owner", "running": "Running"}
+        private = self._private(reveal)
         with self.lock:
             rows = sorted(self.ledger.recent(1000), key=lambda r: r["id"])
             money = report(rows, self.store)
+            events = self.store.events(200)
+            orders = self.store.orders()
         lost = {i["id"]: float(i["loss"]) for i in money["lost_items"]}
         stopped = {i["id"]: float(i["loss"]) for i in money["prevented_items"]}
         actions, reasons = [], {}
@@ -585,10 +601,20 @@ class Workspace:
             codes = [x["code"] for x in r["reasons"]]
             for c in codes:
                 reasons[c] = reasons.get(c, 0) + 1
-            actions.append({"id": r["id"], "time": r["ts"], "tool": r["tool"], "amount": float(r["amount"] or 0), "verdict": r["verdict"],
-                            "status": r["status"], "requested_by": r["sender"] or "owner", "reasons": ", ".join(codes),
+            result = r.get("result") or {}
+            sender = r["sender"] or "owner"
+            actions.append({"id": r["id"], "time": r["ts"], "day": str(r["ts"])[:10], "tool": r["tool"],
+                            "kind": "Refund" if r["tool"] == "refund_payment" else "Payment to a supplier" if r["tool"] == "send_payout" else r["tool"],
+                            "amount": float(r["amount"] or 0), "verdict": r["verdict"], "status": r["status"], "outcome": outcome.get(r["status"], r["status"]),
+                            "requested_by": mask(sender) if private else sender, "from_owner": r["sender"] is None or r.get("channel") == 2,
+                            "reasons": ", ".join(codes) or "none", "reason_text": " ".join(x["message"] for x in r["reasons"]),
+                            "paypal_ref": result.get("refund_id") or result.get("payout_batch_id") or "",
                             "lost": lost.get(r["id"], 0.0), "stopped": stopped.get(r["id"], 0.0)})
+        paid = [{"order_no": o["order_no"], "total": float(o["total"]), "paid": bool(o["capture_id"]), "items": o["items"][:120]} for o in orders]
         return {"actions": actions, "reasons": [{"reason": k, "count": v} for k, v in sorted(reasons.items(), key=lambda kv: -kv[1])],
+                "events": [{"time": e["at"], "kind": e["kind"], "origin": e["origin"] or "n/a", "summary": e["summary"],
+                            "amount": float(e["amount"] or 0)} for e in events],
+                "orders": paid, "shop": self.profile.shop_name,
                 "totals": {"moved": float(money["moved"]), "lost": float(money["lost"]), "stopped": float(money["prevented"])}}
 
     def connection(self) -> dict:
@@ -660,6 +686,7 @@ class Hub:
         self.mailer = None
         self.orders: list[float] = []
         self.alert_times: list[float] = []
+        self.studio_times: dict[str, list[float]] = {}
         self.public_url = os.environ.get("PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
         self.webhook_id = os.environ.get("PAYPAL_WEBHOOK_ID", "")
         # this shop's name for its own PayPal orders. A webhook belongs to a PayPal app, so payments made by another
@@ -713,6 +740,19 @@ class Hub:
             if len(self.orders) >= MAX_ORDERS_PER_HOUR:
                 raise HTTPException(429, "a lot of test orders were placed in the last hour, try again in a few minutes")
             self.orders.append(now)
+
+    def allow_studio(self, visitor: str, owner: bool):
+        """A turn of the dashboard's assistant uses the shared model keys, so there is a cap for everyone and one for each visitor."""
+        with self.lock:
+            now = time.time()
+            self.studio_times = {k: [t for t in v if now - t < 3600] for k, v in self.studio_times.items()}
+            self.studio_times = {k: v for k, v in self.studio_times.items() if v}
+            if sum(len(v) for v in self.studio_times.values()) >= MAX_STUDIO_PER_HOUR:
+                raise HTTPException(429, "the dashboard assistant is busy, try again in a few minutes")
+            mine = self.studio_times.setdefault(visitor, [])
+            if not owner and len(mine) >= MAX_STUDIO_PER_VISITOR:
+                raise HTTPException(429, "that is a lot of questions for one hour, try again later")
+            mine.append(now)
 
     def allow_alert(self) -> bool:
         with self.lock:
@@ -837,6 +877,22 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
         page = (STATIC / "index.html").read_text(encoding="utf-8").replace("%PUBLIC_URL%", html.escape(hub.public_url))
         return HTMLResponse(page)
 
+    @app.get("/dashboard")
+    def dashboard_slash():
+        return RedirectResponse("/dashboard/")
+
+    @app.get("/dashboard/{path:path}")
+    def dashboard(path: str = ""):
+        index = DASHBOARD / "index.html"
+        if not index.is_file():
+            return HTMLResponse(alerts.page("Dashboard not built", "<h1>The dashboard is not built here</h1><p>It is the AG Studio app in the "
+                                            "<code>dashboard</code> folder. Run <code>npm install</code> and <code>npm run build</code> there, "
+                                            "or use the hosted copy.</p>"), 404)
+        target = (DASHBOARD / path).resolve()
+        if path and target.is_file() and DASHBOARD.resolve() in target.parents:
+            return FileResponse(target)
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
     @app.get("/brand/{name}")
     def brand(name: str):
         if name not in BRAND:
@@ -890,6 +946,33 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
     @app.post("/api/orders")
     def place_order(body: OrderIn, ws: Workspace = Depends(shop)):
         return ws.place_order(body)
+
+    @app.post("/api/studio/turn")
+    async def studio_turn(request: HttpRequest, x_owner_token: str | None = Header(None)):
+        """One model turn for the dashboard's assistant (AG Studio asks for these one at a time)."""
+        if hub.llm is None:
+            raise HTTPException(503, "the assistant has no model key on this server")
+        raw = await request.body()
+        if len(raw) > 250_000:
+            raise HTTPException(413, "too large")
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            raise HTTPException(400, "not JSON")
+        if not isinstance(body, dict):
+            raise HTTPException(400, "not an object")
+        forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        visitor = forwarded or (request.client.host if request.client else "unknown")
+        hub.allow_studio(visitor, hub.is_owner(x_owner_token))
+        try:
+            return await asyncio.to_thread(studio.turn, hub.llm, body, "t" + secrets.token_hex(6))
+        except studio.BadTurn as e:
+            raise HTTPException(400, str(e))
+        except LLMUnavailable as e:
+            print(f"dashboard assistant: {e}", flush=True)
+            if "HTTP 429" in str(e):
+                raise HTTPException(429, "The shared AI model is rate limited right now. Wait a minute and ask again.")
+            raise HTTPException(503, "the model is not answering right now, try again in a moment")
 
     @app.post("/api/paypal/webhook")
     async def paypal_webhook(request: HttpRequest):
@@ -996,8 +1079,8 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
         return ws.add_invoice(body)
 
     @app.get("/api/analytics")
-    def analytics(ws: Workspace = Depends(shop)):
-        return ws.analytics()
+    def analytics(ws: Workspace = Depends(shop), x_owner_token: str | None = Header(None)):
+        return ws.analytics(hub.is_owner(x_owner_token))
 
     @app.get("/api/connection")
     def connection(ws: Workspace = Depends(shop)):

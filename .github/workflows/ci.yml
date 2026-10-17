@@ -55,6 +55,21 @@ jobs:
       - run: pip install -e .
       - run: python scripts/mutation_check.py --n 1500
 
+  dashboard:
+    # the AG Studio dashboard: it has to install from its lock file, type-check and build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+        working-directory: dashboard
+      - run: npm run build
+        working-directory: dashboard
+
   image:
     runs-on: ubuntu-24.04
     steps:

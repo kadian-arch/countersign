@@ -78,6 +78,12 @@ When the guard holds a request, the owner is emailed at the address on the Setup
 
 A greeting uses the name on the From line only if it is a few plain words, since that name is the sender's own claim.
 
+### The dashboard (AG Studio)
+
+`/dashboard` is an [AG Studio](https://www.ag-grid.com/studio/) dashboard over the shop's own records (`GET /api/analytics`): money lost and stopped, how each request ended, which rules fired, money by day, the PayPal events and every request in a grid. A custom "Verdict ribbon" widget shows the split between requests that ran, were held and were refused. In edit mode the page has an AI assistant. Studio runs the conversation in the browser and asks the server for one model turn at a time (`POST /api/studio/turn`, `studio.py`), so the model keys stay on the server. The assistant answers from a few plain tools over the same numbers (`dashboard/src/analyst.ts`), because Studio's own query tool has a schema the free models this project runs on cannot fill in; its agents for placing and configuring widgets stay behind it. Arguments a model gets slightly wrong, such as a bare `"data"` where the schema wants `{"id": "data"}`, are put in the shape the tool's own schema asks for. The endpoint is capped per visitor and across everyone, and its tools only read the dashboard's data: nothing in it can reach PayPal.
+
+The dashboard is built from `dashboard/` (React, Vite) into `src/countersign/static/dashboard`, which the Dockerfile does in its own stage. For development run `npm run dev` there while the server runs on port 8000. AG Studio works without a licence key, with a watermark and console notices; set `VITE_AG_STUDIO_LICENSE` when building to remove them.
+
 ### Being a customer on the shared shop
 
 A visitor can place a test order with their own address: it is a real paid order in the PayPal sandbox (`POST /api/orders`, a few an hour across everyone and three per address). Writing to the shop's mailbox from that address and asking for a refund then goes through the whole path: the mail server confirms the sender, the assistant finds the order they own, the guard allows the refund, PayPal makes it and the reply arrives in their inbox. Nobody else's address can reach that order.
@@ -124,12 +130,14 @@ What these tests do not show: how a model words replies beyond the sentence patt
         paypal.py       PayPal REST client and the facts the guard reads
         llm.py          chat client with retry and model fallback
         web.py          the console, the live shop and the API
+        studio.py       one model turn for the dashboard's assistant, with tool arguments repaired to their schema
         sim.py          a stand-in for PayPal, so everything runs offline
         stress.py       the stress test and the rules it judges by
         mutants.py      deliberately broken guards
         redteam.py      a model plays the attacker
         inbox.py, holdout.py, final.py     the three demo inboxes
         evaluate.py, runs.py, days.py, facts.py     run results, replays and the numbers the page quotes
+    dashboard/          the AG Studio dashboard (React, builds into the server's static folder)
     tests/              offline tests
     scripts/            seeding, model runs, stress test, mutation check, red team, server
 

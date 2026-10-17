@@ -1,0 +1,11 @@
+body { margin: 0; background: #04050d; color: #f0f2ff; font-family: "Figtree", "Segoe UI", sans-serif; }
+.note { padding: 28px; color: #a3acd6; font-size: 16px; }
+.note a { color: #6a82ff; }
+.bar { display: flex; align-items: center; gap: 14px; height: 44px; padding: 0 16px; box-sizing: border-box; border-bottom: 1px solid #8c9eff2e; font-size: 14px; }
+.bar b { font-family: "Bricolage Grotesque", sans-serif; font-weight: 600; font-size: 16px; }
+.bar .dim { color: #6770a0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar .back { color: #a3acd6; text-decoration: none; }
+.bar .back:hover { color: #f0f2ff; }
+.bar button { background: #6a82ff22; color: #f0f2ff; border: 1px solid #6a82ff88; border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
+.bar button:hover { background: #6a82ff44; }
+@media (max-width: 700px) { .bar .dim { display: none; } .bar b { flex: 1; } }

@@ -27,8 +27,9 @@ class Outbox:
     def reply(self, incoming, text):
         pass
 
-    def send_alert(self, to, subject, text):
+    def send_alert(self, to, subject, text, html=None):
         self.alerts.append((to, subject, text))
+        self.html = html
 
 
 class AlertTests(unittest.TestCase):

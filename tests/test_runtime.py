@@ -177,6 +177,19 @@ class LLMFallbackTests(unittest.TestCase):
         self.assertIn("HTTP 429", str(cm.exception))
         self.assertEqual(len(naps), 3)
 
+    def test_someone_waiting_at_a_screen_moves_to_the_next_model_instead_of_waiting(self):
+        naps, tried = [], []
+
+        def handler(req):
+            tried.append(json.loads(req.content)["model"])
+            if tried[-1] == "busy":
+                return httpx.Response(429, headers={"retry-after": "30"}, json={})
+            return httpx.Response(200, json={"choices": [{"message": {"content": "answered"}}]})
+        llm = LLM([Provider("a", "https://x.test/v1", "k", ["busy"]), Provider("b", "https://y.test/v1", "k", ["free"])],
+                  transport=httpx.MockTransport(handler), sleep=naps.append)
+        self.assertEqual(llm.chat([], patient=False)["content"], "answered")
+        self.assertEqual((tried, naps), (["busy", "free"], []))
+
     def test_a_spent_daily_quota_is_skipped_at_once_without_waiting(self):
         calls, naps = [], []
 

@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   base: "/dashboard/",
   plugins: [react()],
-  build: { outDir: "../src/countersign/static/dashboard", emptyOutDir: true },
+  // AG Studio with its grid and charts is one large bundle by nature
+  build: { outDir: "../src/countersign/static/dashboard", emptyOutDir: true, chunkSizeWarningLimit: 7000 },
   server: { port: 5173, proxy: { "/api": "http://127.0.0.1:8000" } },
 });
