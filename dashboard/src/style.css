@@ -18,7 +18,8 @@ body { margin: 0; background: #04050d; color: #f0f2ff; font-family: "Figtree", "
 .strip a { color: #ffc94d; }
 @media (max-width: 700px) {
   .bar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 6px 10px; }
-  .bar .editbtn { display: none; }   /* the builder needs a screen wider than a phone */
-  .bar .tabs { flex-basis: 100%; }
+  .bar .tabs { flex-basis: 100%; order: 5; }
   .strip { font-size: 13px; }
 }
+.bar .ghost { background: transparent; border-color: #8c9eff40; color: #a3acd6; }
+.bar button:disabled { opacity: .6; cursor: default; }

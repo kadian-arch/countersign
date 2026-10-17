@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -15,7 +16,10 @@ def load_env():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip().strip('"'))
+            v = v.strip()
+            if not v.startswith('"'):
+                v = re.split(r"\s+#", v, maxsplit=1)[0].strip()   # a note after the value is not part of it
+            os.environ.setdefault(k.strip(), v.strip('"'))
 
 
 def need(name: str) -> str:

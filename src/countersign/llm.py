@@ -39,7 +39,9 @@ class Provider:
 
 def providers_from_env(env=os.environ, require_models: bool = True, var: str = "LLM_PROVIDERS") -> list[Provider]:
     found = []
-    for name in (n.strip().lower() for n in env.get(var, env.get("LLM_PROVIDERS", "gemini")).split(",") if n.strip()):
+    for name in (re.sub(r"[^a-z0-9_]", "", n.lower()) for n in env.get(var, env.get("LLM_PROVIDERS", "gemini")).split(",")):   # a stray mark after a name is ignored
+        if not name:
+            continue
         key = env.get(f"{name.upper()}_API_KEY")
         models = env.get(f"{name.upper()}_MODELS", DEFAULT_MODELS.get(name, ""))
         if key and name in BASE_URLS and (models or not require_models):

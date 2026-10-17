@@ -104,6 +104,26 @@ class ProviderOrderTests(unittest.TestCase):
         self.assertEqual([p.name for p in providers_from_env(self.ENV)], ["cerebras", "groq", "gemini"])
         self.assertEqual([p.name for p in providers_from_env({**self.ENV, "STUDIO_PROVIDERS": "gemini,groq"}, var="STUDIO_PROVIDERS")], ["gemini", "groq"])
 
+    def test_a_stray_mark_after_a_provider_name_does_not_lose_the_provider(self):
+        from countersign.llm import providers_from_env
+        self.assertEqual([p.name for p in providers_from_env({**self.ENV, "LLM_PROVIDERS": "cerebras,groq#, gemini "})], ["cerebras", "groq", "gemini"])
+
+    def test_a_note_after_a_value_in_the_env_file_is_not_part_of_the_value(self):
+        import os, tempfile
+        from pathlib import Path
+        from unittest import mock
+        from countersign import config
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / ".env").write_text('A_KEY=abc  # my note\nB_KEY="x # y"\nC_KEY=plain\n', encoding="utf-8")
+            with mock.patch.object(config, "ROOT", Path(tmp)), mock.patch.dict(os.environ, {}, clear=False):
+                for k in ("A_KEY", "B_KEY", "C_KEY"):
+                    os.environ.pop(k, None)
+                config.load_env()
+                got = (os.environ["A_KEY"], os.environ["B_KEY"], os.environ["C_KEY"])
+                for k in ("A_KEY", "B_KEY", "C_KEY"):
+                    os.environ.pop(k, None)
+        self.assertEqual(got, ("abc", "x # y", "plain"))
+
     def test_without_its_own_order_it_uses_the_shops(self):
         from countersign.llm import providers_from_env
         self.assertEqual([p.name for p in providers_from_env(self.ENV, var="STUDIO_PROVIDERS")], ["cerebras", "groq", "gemini"])
