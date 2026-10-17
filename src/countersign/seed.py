@@ -4,7 +4,7 @@ from .store import Store
 
 
 def seed_demo(paypal: PayPal, store: Store, *, card: str, expiry: str, supplier_email: str, attacker_email: str,
-              say=print, extra_orders=(), extra_invoices=()):
+              say=print, extra_orders=(), extra_invoices=(), tag: str = ""):
     """One real, paid sandbox order for every demo order, plus the supplier and the invoices on file.
     Safe to repeat: orders that already have a payment are left alone."""
     paid = {o["order_no"] for o in store.orders() if o["capture_id"]}
@@ -15,7 +15,7 @@ def seed_demo(paypal: PayPal, store: Store, *, card: str, expiry: str, supplier_
         total = demo.order_total(items)
         store.add_order(order_no, name, email, demo.order_lines(items), total, note)
         res = paypal.create_paid_order(reference=order_no, description=f"{demo.SHOP} order #{order_no}",
-                                       total=total, card_number=card, card_expiry=expiry, cardholder=name)
+                                       total=total, card_number=card, card_expiry=expiry, cardholder=name, tag=tag)
         capture = res["purchase_units"][0]["payments"]["captures"][0]
         store.set_payment(order_no, res["id"], capture["id"])
         say(f"{order_no} {name:<16} {total:>8} {res['status']} capture {capture['id']}")

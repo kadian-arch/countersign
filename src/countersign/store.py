@@ -195,7 +195,7 @@ class Store:
         self._exec("delete from paypal_events where event_id=? and summary=''", (event_id,))
 
     def events(self, limit: int = 12) -> list[dict]:
-        return [dict(r) for r in self._all("select * from paypal_events where summary != '' order by at desc, rowid desc limit ?", (limit,))]
+        return [dict(r) for r in self._all("select * from paypal_events where summary != '' and kind != 'ignored' order by at desc, rowid desc limit ?", (limit,))]
 
     def external_refunds_today(self) -> Decimal:
         """Refunds made in PayPal itself today, outside Countersign. They count against the same daily limit."""

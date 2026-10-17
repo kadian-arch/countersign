@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- PayPal Agent Toolkit tools for the owner's assistant only: reads return nothing to anyone else, actions are held until the owner approves.
+- A shop tag keeps other deployments' and test runs' payments out of a shop's records, and refunds, disputes and payouts only count if they are about something the shop has a record of.
+- Resetting the shared shop needs the owner token.
+- Times in the activity table are shown in the viewer's own time zone, and the Setup page shows whether the last owner email was sent.
+- Odd spacing characters and stray ellipses in a model's reply are repaired before the email goes out.
+- A short "four things to try" guide at the top of the live shop.
 - Site icon and a share image for links (`scripts/make_brand.py` redraws them); the page tells chat and social sites where it is served from.
 - A model key alone is enough for Cerebras and Groq (default model names), and the server log says which of the model, mailbox, alerts and webhook are on.
 - Model runs are stamped with the version of the guard, checker, lookups, loss counting and prompt, and only matching runs are counted.

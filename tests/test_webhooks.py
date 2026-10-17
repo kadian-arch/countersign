@@ -29,7 +29,7 @@ def refund_event(event_id, refund, capture, amount):
                          "links": [{"rel": "up", "href": f"https://api.sandbox.paypal.com/v2/payments/captures/{capture}"}]}}
 
 
-class WebhookTests(unittest.TestCase):
+class Base(unittest.TestCase):
     def setUp(self):
         self.mail = Outbox()
         self.app = create_app("live", owner_token="secret", llm=None, live_backend=backend, seeder=lambda ws: None, mailer=self.mail)
@@ -51,6 +51,8 @@ class WebhookTests(unittest.TestCase):
         time.sleep(0.05)
         return [s for _, s, _ in self.mail.alerts]
 
+
+class WebhookTests(Base):
     def test_nothing_is_believed_without_paypals_confirmation(self):
         bad = {**SIGNED, "paypal-transmission-sig": "forged"}
         self.assertEqual(self.send(capture_event("E1", "WHCAPX00001", "ORD-X"), bad).status_code, 400)
@@ -135,15 +137,18 @@ class WebhookTests(unittest.TestCase):
         self.assertEqual(self.c.post("/api/submit", json=contact).json()["status"], "executed")
         owed = lambda: next(i for s in self.c.get("/api/book").json()["suppliers"] for i in s["invoices"] if i["invoice_id"] == "20431")
         self.assertEqual(owed()["paid"], True)
-        item = lambda n, status: {"id": n, "event_type": "PAYMENT.PAYOUTS-ITEM." + status, "resource": {
-            "transaction_status": status, "payout_item": {"receiver": "accounts@eastgate-packaging.example", "sender_item_id": "20431",
-                                                          "amount": {"value": "96.20"}}}}
+        batch = self.ws.ledger.recent(1)[0]["result"]["payout_batch_id"]
+        item = lambda n, status, batch=batch: {"id": n, "event_type": "PAYMENT.PAYOUTS-ITEM." + status, "resource": {
+            "transaction_status": status, "payout_batch_id": batch,
+            "payout_item": {"receiver": "accounts@eastgate-packaging.example", "sender_item_id": "20431", "amount": {"value": "96.20"}}}}
         self.send(item("E5", "UNCLAIMED"))
         self.assertEqual(owed()["paid"], True)          # unclaimed money can still arrive, so nothing is undone
         self.send(item("E6", "DENIED"))
         self.assertEqual((owed()["paid"], owed()["owed"]), (False, "96.20"))
         self.assertIn("so invoice 20431 is owed again", self.events()[0]["summary"])
         self.assertEqual(len(self.alerts()), 2)
+        self.send(item("E6b", "DENIED", batch="SOMEONE-ELSES-BATCH"))   # a payout this shop did not send touches nothing here
+        self.assertEqual(len(self.events()), 2)
 
     def test_a_message_that_cannot_be_handled_is_retried_not_lost(self):
         self.paypal.add_payment("SIMORD-X", "WHCAPX00001", Decimal("42.00"))
@@ -159,6 +164,37 @@ class WebhookTests(unittest.TestCase):
         self.assertEqual(self.send({"event_type": "PAYMENT.CAPTURE.COMPLETED"}).json()["new"], False)   # no id
         self.assertEqual(self.send({"id": "E9", "event_type": "PAYMENT.CAPTURE.REFUNDED", "resource": {}}).status_code, 200)
         self.assertEqual(self.c.post("/api/paypal/webhook", content="not json", headers=SIGNED).status_code, 400)
+
+
+class OtherShopsTests(Base):
+    """Another deployment or a test run on the same PayPal app is heard by this server too. Only this shop's own things count."""
+
+    def setUp(self):
+        super().setUp()
+        self.hub.shop_tag = "myshop"
+        self.mail.alerts.clear()
+
+    def order(self, capture, order_id, invoice, amount="42.00"):
+        self.paypal.add_payment(order_id, capture, Decimal(amount))
+        self.paypal.order_meta[order_id] = {"custom_id": "ORD-5", "invoice_id": invoice, "description": "Beans"}
+        return capture_event("E" + capture, capture, order_id, amount)
+
+    def test_only_payments_tagged_for_this_shop_are_learned(self):
+        self.assertEqual(self.send(self.order("WHCAPA00001", "SIMORD-A", "otherrun-ORD-5-abc123"))
+                         .json()["new"], True)
+        self.assertIsNone(self.ws.store.order_by_capture("WHCAPA00001"))
+        self.assertEqual(self.events(), [])   # and it is not shown either
+        self.send(self.order("WHCAPB00001", "SIMORD-B", "myshop-ORD-5-abc123"))
+        self.assertEqual(self.ws.store.order_by_capture("WHCAPB00001")["order_no"], "ORD-5")
+
+    def test_a_refund_on_a_payment_this_shop_never_recorded_is_ignored_and_not_counted(self):
+        self.send(refund_event("E1", "REF-X", "WHCAPZ00001", "300.00"))
+        self.assertEqual((self.events(), self.ws.store.external_refunds_today(), self.alerts()), ([], Decimal("0"), []))
+
+    def test_a_dispute_on_an_unknown_payment_is_ignored(self):
+        self.send({"id": "E2", "event_type": "CUSTOMER.DISPUTE.CREATED", "resource": {
+            "dispute_amount": {"value": "9.00"}, "disputed_transactions": [{"seller_transaction_id": "WHCAPZ00001"}]}})
+        self.assertEqual((self.events(), self.alerts()), ([], []))
 
 
 class VerifyTests(unittest.TestCase):

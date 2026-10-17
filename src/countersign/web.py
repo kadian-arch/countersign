@@ -19,13 +19,13 @@ from contextlib import asynccontextmanager
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Literal
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request as HttpRequest, Response
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import alerts, webhooks
+from . import alerts, tidy, toolkit, webhooks
 from . import demo_data as demo
 from . import emails, mailbox
 from . import profile as profiles
@@ -150,6 +150,7 @@ class Workspace:
         self.resetting = False
         self.last_reseed = 0.0
         self.error: str | None = None
+        self.toolkit_tools = 0   # how many of PayPal's Agent Toolkit tools the owner's assistant has
         self.profile = profiles.demo_profile()
         if kind == "live":
             self._build_live()
@@ -181,7 +182,11 @@ class Workspace:
             saved = profiles.Profile(shop_name=os.environ.get("SHOP_NAME", "My shop"), owner_email=os.environ["OWNER_EMAIL"])
         self.profile = saved or self.profile
         facts = LiveFacts(self.paypal, self.store, self.ledger)
-        self.runtime = Runtime(build_tools(self.paypal, facts, self.store), Guard(self.profile.policy, facts), self.ledger)
+        tools = build_tools(self.paypal, facts, self.store)
+        extra = toolkit.owner_tools(os.environ.get("PAYPAL_CLIENT_ID", ""), os.environ.get("PAYPAL_CLIENT_SECRET", ""))
+        tools.update(extra)   # PayPal's Agent Toolkit, for the owner only (empty when it is not installed)
+        self.runtime = Runtime(tools, Guard(self.profile.policy, facts), self.ledger, owner_only=frozenset(extra))
+        self.toolkit_tools = len(extra)
         if not self.store.orders():   # a fresh server: give the shop its first paid orders in the background
             self.resetting = True
             threading.Thread(target=self._reseed, daemon=True).start()
@@ -274,7 +279,7 @@ class Workspace:
         try:
             res = paypal.create_paid_order(reference=order_no, description=f"{self.profile.shop_name} order #{order_no}", total=total,
                                            card_number=os.environ.get("SANDBOX_CARD_NUMBER", ""), card_expiry=os.environ.get("SANDBOX_CARD_EXPIRY", ""),
-                                           cardholder=name)
+                                           cardholder=name, tag=self.hub.shop_tag)
             capture = res["purchase_units"][0]["payments"]["captures"][0]["id"]
         except Exception:
             with self.lock:
@@ -390,9 +395,10 @@ class Workspace:
                     mail = Email(item["id"], "stranger", item["sender"], item["subject"], item["body"], "live", "",
                                  PASSING if item["authenticated"] else FAILING, item["name"])
                     agent = Agent(self.hub.llm, self.runtime, self.profile.shop_name, facts=self.profile.knowledge,
-                                  owner_email=self.profile.owner_email, on_step=self._on_step, greet=True)
+                                  owner_email=self.profile.owner_email, on_step=self._on_step, greet=True,
+                                  owner_tools=self.runtime.owner_only)
                     outcome = agent.handle(mail)
-                    item["reply"] = outcome.reply
+                    item["reply"] = tidy.reply(outcome.reply)
                     item["removed"] = len(outcome.audit.claims) if outcome.audit else 0
                     item["invented"] = len(outcome.audit.invented) if outcome.audit else 0
                     item["status"] = "done"
@@ -440,11 +446,17 @@ class Workspace:
                 try:
                     self.hub.mailer.send_alert(owner, subject, text)
                 except Exception as e:   # not marked as told, so the next alert tries again
-                    self.hub.mailer.error = f"could not email the owner: {str(e)[:80]}"
+                    self._noted(False, str(e)[:80])
                     break
+                self._noted(True)
                 seen.add(row["id"])
                 with self.lock:
                     self.store.set_setting("alerted", json.dumps(sorted(seen)[-500:]))
+
+    def _noted(self, ok: bool, error: str | None = None):
+        """Keeps the last alert's outcome where the Setup page can show it, and in the host's log."""
+        self.hub.mailer.last_alert = {"at": time.time(), "ok": ok, "error": error}
+        print(f"countersign: owner alert {'sent' if ok else 'FAILED: ' + str(error)}", flush=True)
 
     def tell_owner(self, subject: str, text: str):
         """A short email to the owner about something PayPal reported. Shares the hourly limit with the approval alerts."""
@@ -452,14 +464,15 @@ class Workspace:
         if self.kind == "live" and self.profile.alerts and mailer is not None and hasattr(mailer, "send_alert") and self.hub.allow_alert():
             try:
                 mailer.send_alert(self.profile.owner_email, subject, text)
+                self._noted(True)
             except Exception as e:
-                mailer.error = f"could not email the owner: {str(e)[:80]}"
+                self._noted(False, str(e)[:80])
 
     # ---- what PayPal reports
 
     def paypal_event(self, event: dict) -> bool:
         paypal = self.paypal or self.sim.paypal
-        handler = webhooks.Handler(paypal, self.store, self.ledger, self.tell_owner, self.hub.webhook_wait)
+        handler = webhooks.Handler(paypal, self.store, self.ledger, self.tell_owner, self.hub.webhook_wait, self.hub.shop_tag)
         new = handler.handle(event)
         if new:
             with self.lock:
@@ -649,6 +662,12 @@ class Hub:
         self.alert_times: list[float] = []
         self.public_url = os.environ.get("PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
         self.webhook_id = os.environ.get("PAYPAL_WEBHOOK_ID", "")
+        # this shop's name for its own PayPal orders. A webhook belongs to a PayPal app, so payments made by another
+        # deployment or a test run on the same credentials reach it too, and the tag is how they are told apart.
+        # SHOP_TAG sets it, otherwise it comes from the public address, and a shop run on a laptop has none
+        host = urlparse(self.public_url).hostname or ""
+        tag = os.environ.get("SHOP_TAG", "").strip() or ("" if host in ("", "localhost", "127.0.0.1") or host.endswith(".localhost") else host.split(".")[0])
+        self.shop_tag = re.sub(r"[^A-Za-z0-9]", "", tag)[:24]
         self.webhook_wait = 1.5   # seconds to let our own ledger catch up before calling a refund someone else's
         self.live = Workspace(self, "live") if mode in ("live", "both") else None
 
@@ -741,7 +760,8 @@ def reseed_live(ws: Workspace):
         ws.runtime.ctx = Context()
         profiles.save(ws.store, ws.profile)
     seed_demo(ws.paypal, ws.store, card=need("SANDBOX_CARD_NUMBER"), expiry=need("SANDBOX_CARD_EXPIRY"),
-              supplier_email=need("SANDBOX_SUPPLIER_EMAIL"), attacker_email=need("SANDBOX_ATTACKER_EMAIL"), say=lambda *_: None)
+              supplier_email=need("SANDBOX_SUPPLIER_EMAIL"), attacker_email=need("SANDBOX_ATTACKER_EMAIL"), say=lambda *_: None,
+              tag=ws.hub.shop_tag)
 
 
 def build_llm():
@@ -785,6 +805,10 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
         if hub.live is not None:   # what a host's log should say, so a missing setting is not a guessing game
             say = lambda text: print(f"countersign: {text}", flush=True)
             say("PayPal shop: on" + ("" if hub.webhook_id else ", PayPal webhook not registered yet (PAYPAL_WEBHOOK_ID)"))
+            tag_note = hub.shop_tag or "(none, so every payment on the PayPal account counts as this shop's)"
+            say("shop tag: " + tag_note)
+            say(f"PayPal Agent Toolkit: {hub.live.toolkit_tools} tools for the owner" if hub.live.toolkit_tools
+                else "PayPal Agent Toolkit: off, not installed")
             say("assistant: " + ("ready" if hub.llm is not None else "OFF, no model key found (set CEREBRAS_API_KEY or GROQ_API_KEY)"))
             say("mailbox: " + (settings.user if hub.mailer is not None and settings is not None else "off"
                                + (", needs a model key first" if settings is not None and hub.llm is None else ", set MAIL_USER and MAIL_PASSWORD")))
@@ -996,8 +1020,9 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
         return FileResponse(path, media_type="application/json")
 
     @app.post("/api/reset")
-    def reset(ws: Workspace = Depends(shop)):
-        if ws.kind == "live":
+    def reset(ws: Workspace = Depends(shop), x_owner_token: str | None = Header(None)):
+        if ws.kind == "live":   # wiping the shared shop's records and audit log is the owner's call
+            hub.owner_only(x_owner_token, ws.kind)
             return ws.start_reseed()
         ws.reset()
         return {"status": "ok"}

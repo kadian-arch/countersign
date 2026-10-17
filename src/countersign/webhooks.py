@@ -1,10 +1,15 @@
 """What PayPal tells the shop on its own: a payment was captured, a refund was made, a customer opened a dispute,
 a payout did not arrive.
 
-The shop learns its orders from PayPal this way, so it is not limited to the records it wrote itself. A refund made
+The shop learns its orders from PayPal this way, so it is not limited to records it wrote itself. A refund made
 in PayPal outside Countersign is noticed, counted against the same daily limit, and the owner is told. A payout that
 PayPal denies puts the invoice back to owed. Every message is verified with PayPal before it gets here, and each one
 is handled once, whatever number of times PayPal sends it.
+
+A webhook belongs to a PayPal app, not to a shop, so messages about payments that are not this shop's reach it too
+(another deployment, a test run using the same credentials). Those are ignored: a payment is learned only if its invoice
+id carries this shop's tag, and refunds, disputes and payouts only count if they are about a payment or payout this
+shop has a record of.
 """
 import re
 import time
@@ -22,6 +27,8 @@ EVENT_TYPES = [
 ]
 PAYOUT_LOST = {"DENIED", "FAILED", "RETURNED", "BLOCKED"}   # the money is not going to arrive
 PAYOUT_TROUBLE = PAYOUT_LOST | {"HELD", "UNCLAIMED"}
+MAX_ORDERS = 300   # learned orders stop here, a shop's page is not a place for thousands
+NOT_OURS = ("ignored", "not this shop's")
 
 
 def _money(value) -> Decimal:
@@ -36,10 +43,11 @@ def _plain(text, limit: int, fallback: str) -> str:
 
 
 class Handler:
-    """tell(subject, text) emails the owner, or does nothing if the shop has no mailbox."""
+    """tell(subject, text) emails the owner, or does nothing if the shop has no mailbox. tag is this shop's name for
+    its own orders (see paypal.create_paid_order), empty when the shop takes every payment on the account."""
 
-    def __init__(self, paypal, store, ledger, tell=None, wait: float = 1.5):
-        self.paypal, self.store, self.ledger, self.tell, self.wait = paypal, store, ledger, tell, wait
+    def __init__(self, paypal, store, ledger, tell=None, wait: float = 1.5, tag: str = ""):
+        self.paypal, self.store, self.ledger, self.tell, self.wait, self.tag = paypal, store, ledger, tell, wait, tag
 
     def handle(self, event: dict) -> bool:
         """True if this was new. Raises if it could not be handled, so PayPal sends it again."""
@@ -61,6 +69,19 @@ class Handler:
             self.tell(summary, f"{summary}.\n\nThis came from PayPal. The shop's page has the details.\n")
         return True
 
+    @staticmethod
+    def _ignored():
+        return NOT_OURS[0], NOT_OURS[1], None, "", False
+
+    def _mine(self, found) -> bool:
+        """Whether the ledger already has this. PayPal can tell us before the ledger has written it down, so look twice."""
+        for attempt in range(2):
+            if any(found(r) for r in self.ledger.recent(500)):
+                return True
+            if attempt == 0:
+                time.sleep(self.wait)
+        return False
+
     # ---- payments
 
     def _order_text(self, capture_id) -> str:
@@ -75,32 +96,32 @@ class Handler:
             if known:
                 return "payment", f"Payment of ${amount} received for order #{known['order_no']}", amount, "", False
             number = self._learn_order(capture_id, amount, res)
+            if number is None:
+                return self._ignored()
             return "payment", f"Payment of ${amount} received, added as order #{number}", amount, "", False
         if kind.endswith(".REFUNDED"):
             capture_id = next((l["href"].rstrip("/").rsplit("/", 1)[-1] for l in res.get("links", []) if l.get("rel") == "up"), None)
-            ours = self._ours(res.get("id"))
+            if not capture_id or not self.store.order_by_capture(capture_id):
+                return self._ignored()   # a refund on a payment this shop has no record of is not its business
             where = self._order_text(capture_id)
-            if ours:
+            refund_id = res.get("id")
+            if self._mine(lambda r: r["tool"] == "refund_payment" and (r.get("result") or {}).get("refund_id") == refund_id):
                 return "refund", f"Refund of ${amount}{where}, made by Countersign", amount, "countersign", False
             return "refund", f"Refund of ${amount}{where}, made in PayPal outside Countersign", amount, "outside", True
+        if not self.store.order_by_capture(capture_id):
+            return self._ignored()
         what = {"DENIED": "was denied", "REVERSED": "was reversed"}.get(kind.rsplit(".", 1)[-1], "changed")
         return "payment", f"A payment of ${amount}{self._order_text(capture_id)} {what}", amount, "", kind.endswith(".REVERSED")
 
-    def _ours(self, refund_id) -> bool:
-        """Whether Countersign made this refund. PayPal can tell us before the ledger has written it down, so look twice."""
-        for attempt in range(2):
-            if any(r["tool"] == "refund_payment" and (r.get("result") or {}).get("refund_id") == refund_id
-                   for r in self.ledger.recent(500)):
-                return True
-            if attempt == 0:
-                time.sleep(self.wait)
-        return False
-
-    def _learn_order(self, capture_id, amount: Decimal, res: dict) -> str:
-        """A payment the shop has no record of: read the order from PayPal and add it."""
+    def _learn_order(self, capture_id, amount: Decimal, res: dict) -> str | None:
+        """A payment the shop has no record of: read the order from PayPal and add it, if it is this shop's."""
         order_id = ((res.get("supplementary_data") or {}).get("related_ids") or {}).get("order_id")
         data = self.paypal.order(order_id) if order_id else {}
         unit = (data.get("purchase_units") or [{}])[0]
+        if self.tag and not str(unit.get("invoice_id") or "").startswith(self.tag + "-"):
+            return None
+        if len(self.store.orders()) >= MAX_ORDERS:
+            return None
         number = str(unit.get("custom_id") or res.get("custom_id") or unit.get("reference_id") or "")
         payer = data.get("payer") or {}
         who = payer.get("name") or {}
@@ -122,6 +143,8 @@ class Handler:
     def _dispute(self, kind: str, res: dict):
         amount = _money((res.get("dispute_amount") or {}).get("value"))
         transaction = ((res.get("disputed_transactions") or [{}])[0]).get("seller_transaction_id")
+        if not transaction or not self.store.order_by_capture(transaction):
+            return self._ignored()
         where = self._order_text(transaction)
         step = kind.rsplit(".", 1)[-1]
         if step == "CREATED":
@@ -133,11 +156,13 @@ class Handler:
     # ---- payouts
 
     def _payout(self, kind: str, res: dict):
+        header = res.get("batch_header") or {}
+        batch = str(res.get("payout_batch_id") or header.get("payout_batch_id") or "")
+        if not batch or not self._mine(lambda r: r["tool"] == "send_payout" and (r.get("result") or {}).get("payout_batch_id") == batch):
+            return self._ignored()   # a payout this shop did not send
         if kind.startswith("PAYMENT.PAYOUTSBATCH."):
-            header = res.get("batch_header") or {}
             status = str(header.get("batch_status") or kind.rsplit(".", 1)[-1]).upper()
-            batch = str(header.get("payout_batch_id") or "")[:12]
-            return "payout", f"Payout batch {batch} {status.lower()}", None, "", status in PAYOUT_TROUBLE
+            return "payout", f"Payout batch {batch[:12]} {status.lower()}", None, "", status in PAYOUT_TROUBLE
         item = res.get("payout_item") or {}
         status = str(res.get("transaction_status") or kind.rsplit(".", 1)[-1]).upper()
         amount = _money((item.get("amount") or {}).get("value"))

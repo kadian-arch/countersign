@@ -66,6 +66,12 @@ On the PayPal shop the server also listens to PayPal (`POST /api/paypal/webhook`
 
 The page shows what PayPal has reported in a "Told by PayPal" panel.
 
+A webhook belongs to a PayPal app, not to a shop, so payments from another deployment or a test run on the same credentials reach it too. They are ignored: a payment is only learned if its invoice id starts with this shop's tag (`SHOP_TAG`, or the first part of `PUBLIC_URL`'s host when that is set, and none on a laptop), a refund or dispute only counts if it is about a payment the shop has a record of, and a payout only if the shop's own ledger sent it. Resetting the shared shop's records and audit log needs the owner token.
+
+### PayPal's Agent Toolkit
+
+When PayPal's `paypal-agent-toolkit` is installed (the Dockerfile and CI do it, with `--no-deps` because the package pins old agent frameworks this project does not use), the owner's assistant also gets some of its tools: transactions, disputes, invoices and merchant insights to read, and accepting a dispute, sending an invoice reminder and cancelling an invoice to act (`toolkit.py`). Those tools are exactly what a stranger's email must not reach, so they are shown to the assistant only for an email from the confirmed owner, they return nothing to anyone else even if a model asks for one by name, and the ones that act have no automatic rule, so the guard holds every one until the owner approves it, and approving runs the guard again. The toolkit has no refund or payout tool; those are Countersign's own, with the full rules.
+
 ### Owner alerts
 
 When the guard holds a request, the owner is emailed at the address on the Setup page: what was asked, who asked, why it was held, and a link. The link opens a page that shows the request with Approve and Refuse buttons. Opening the link changes nothing, so a mail scanner cannot approve anything, and approving runs the guard again before PayPal is called. The link is signed with the owner token for that one request and stops working after 24 hours. At most ten alert emails go out an hour, since a stranger's requests are what create holds; the rest stay in the queue on the page and go out with the next alert. Alerts need the shop mailbox and `OWNER_TOKEN`, and can be switched off on the Setup page. Set `PUBLIC_URL` to the address the server is reached at so the links point to it.

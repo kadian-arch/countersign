@@ -38,7 +38,7 @@ class SimPayPal:
         self.captures[capture_id] = {"order": order_id, "amount": amount, "refunded": Decimal("0")}
 
     def create_paid_order(self, *, reference: str, description: str, total: Decimal, card_number: str,
-                          card_expiry: str, cardholder: str) -> dict:
+                          card_expiry: str, cardholder: str, tag: str = "") -> dict:
         capture = f"SIMCAP{reference}A1"
         self.add_payment(f"SIMORD{reference}", capture, total)
         return {"id": f"SIMORD{reference}", "status": "COMPLETED",

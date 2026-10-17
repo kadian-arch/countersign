@@ -25,6 +25,8 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - run: pip install -e .
+      # PayPal's Agent Toolkit pins old agent frameworks this project does not use, so only the package itself goes in
+      - run: pip install requests && pip install --no-deps paypal-agent-toolkit==1.11.0
       - run: python -m unittest discover -s tests -t .
 
   stress:

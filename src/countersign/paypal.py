@@ -71,11 +71,12 @@ class PayPal:
         return self.request("GET", f"/v2/checkout/orders/{order_id}")
 
     def create_paid_order(self, *, reference: str, description: str, total: Decimal, card_number: str,
-                          card_expiry: str, cardholder: str) -> dict:
+                          card_expiry: str, cardholder: str, tag: str = "") -> dict:
+        """tag says which shop the order belongs to (it leads the invoice id), so a webhook can tell one shop's payments from another's."""
         return self.request("POST", "/v2/checkout/orders", {
             "intent": "CAPTURE",
             "purchase_units": [{
-                "reference_id": reference, "custom_id": reference, "invoice_id": f"MS-{reference}-{uuid.uuid4().hex[:6]}",
+                "reference_id": reference, "custom_id": reference, "invoice_id": f"{tag or 'MS'}-{reference}-{uuid.uuid4().hex[:6]}",
                 "description": description, "amount": {"currency_code": "USD", "value": fmt(total)}}],
             "payment_source": {"card": {
                 "number": card_number.replace(" ", ""), "expiry": card_expiry, "name": cardholder,

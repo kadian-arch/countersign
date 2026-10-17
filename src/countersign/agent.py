@@ -40,7 +40,8 @@ class Outcome:
 
 class Agent:
     def __init__(self, llm, runtime: Runtime, shop: str, max_steps: int = 8, check_replies: bool = True,
-                 facts: str = "", owner_email: str = demo.OWNER_EMAIL, on_step=None, greet: bool = False):
+                 facts: str = "", owner_email: str = demo.OWNER_EMAIL, on_step=None, greet: bool = False,
+                 owner_tools=frozenset()):
         self.llm = llm
         self.rt = runtime
         self.shop = shop
@@ -50,7 +51,9 @@ class Agent:
         self.greet = greet
         self.max_steps = max_steps
         self.check_replies = check_replies
-        self.tool_specs = [t.spec() for t in runtime.tools.values()]
+        # tools only the owner is shown, so a stranger's email never sees them in the prompt (the runtime also refuses them)
+        self.tool_specs = [t.spec() for n, t in runtime.tools.items() if n not in owner_tools]
+        self.owner_specs = [t.spec() for n, t in runtime.tools.items() if n in owner_tools]
 
     def handle(self, email: Email) -> Outcome:
         origin, verified = route(email.sender, self.owner_email, email.auth)
@@ -63,8 +66,9 @@ class Agent:
             {"role": "user", "content": f"From: {f'{email.name} <{email.sender}>' if email.name else email.sender}\nSubject: {email.subject}\n\n{email.body}"},
         ]
         steps: list[Step] = []
+        specs = self.tool_specs + (self.owner_specs if origin is Origin.OWNER else [])
         for _ in range(self.max_steps):
-            msg = self.llm.chat(messages, self.tool_specs)
+            msg = self.llm.chat(messages, specs)
             calls = msg.get("tool_calls") or []
             if not calls:
                 return self._finish(email, source, (msg.get("content") or "").strip(), steps)

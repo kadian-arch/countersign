@@ -5,6 +5,9 @@ COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 # editable, so the shop's records are written under /app/data and not inside site-packages
 RUN pip install --no-cache-dir -e .
+# PayPal's Agent Toolkit, for the owner's assistant. It pins old agent frameworks this project does not use,
+# so only the package itself is installed, plus the one library it needs
+RUN pip install --no-cache-dir requests && pip install --no-cache-dir --no-deps paypal-agent-toolkit==1.11.0
 
 # with PayPal credentials in the environment the server runs the sandbox shop beside the practice shops,
 # without them it runs practice shops only

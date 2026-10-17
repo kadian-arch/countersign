@@ -121,10 +121,11 @@ class Mailbox:
         self.error: str | None = None
         self.sent: dict[str, list[float]] = {}
         self.seen_ids: set[str] = set()
+        self.last_alert: dict | None = None   # when the owner was last emailed, and whether it worked
 
     def public(self) -> dict:
         return {"address": self.settings.user, "ok": self.error is None and self.checked is not None,
-                "checked": self.checked, "error": self.error}
+                "checked": self.checked, "error": self.error, "alert": self.last_alert}
 
     def start(self):
         self.thread = threading.Thread(target=self._loop, daemon=True, name="mailbox")

@@ -9,16 +9,20 @@ _STATUS = {Verdict.ALLOW: "running", Verdict.HOLD: "pending", Verdict.BLOCK: "bl
 class Runtime:
     """The only way the agent reaches PayPal."""
 
-    def __init__(self, tools: dict[str, Tool], guard: Guard, ledger: Ledger, ctx: Context | None = None):
+    def __init__(self, tools: dict[str, Tool], guard: Guard, ledger: Ledger, ctx: Context | None = None,
+                 owner_only=frozenset()):
         self.tools = tools
         self.guard = guard
         self.ledger = ledger
         self.ctx = ctx or Context()
+        self.owner_only = frozenset(owner_only)   # tools nobody but the confirmed owner may use, whatever a model asks for
 
     def call(self, name: str, args: dict, req: Request) -> dict:
         tool = self.tools.get(name)
         if tool is None:
             return {"status": "error", "error": f"there is no tool called {name}"}
+        if name in self.owner_only and req.channel is not Origin.OWNER:
+            return {"status": "error", "error": "only the shop owner can use this tool"}
         if tool.kind is Kind.READ:
             return self._run_read(tool, args, req)
 

@@ -392,15 +392,18 @@ class LiveShopTests(unittest.TestCase):
         held = self.c.post("/api/submit", json=NEW_BANK).json()
         self.assertEqual(self.c.post(f"/api/actions/{held['action_id']}/reject").status_code, 200)
 
-    def test_the_shared_shop_can_be_set_up_again_but_not_over_and_over(self):
+    def test_the_shared_shop_is_set_up_again_by_the_owner_only_and_not_over_and_over(self):
+        owner = {"X-Owner-Token": "secret"}
+        self.assertEqual(self.c.post("/api/reset").status_code, 401)   # a visitor cannot wipe the shared shop and its audit log
+        self.assertEqual(self.c.post("/api/reset", headers={"X-Owner-Token": "wrong"}).status_code, 401)
         with mock.patch("countersign.web.RESEED_SECONDS", 300):
-            self.assertEqual(self.c.post("/api/reset").json(), {"status": "started"})
+            self.assertEqual(self.c.post("/api/reset", headers=owner).json(), {"status": "started"})
             for _ in range(100):
                 if not self.c.get("/api/state").json()["resetting"]:
                     break
                 time.sleep(0.02)
             self.assertEqual(self.reseeded, [1])
-            self.assertEqual(self.c.post("/api/reset").status_code, 429)
+            self.assertEqual(self.c.post("/api/reset", headers=owner).status_code, 429)
 
     def test_a_server_without_a_sandbox_shop_says_so(self):
         c = TestClient(create_app("sim", llm=None))

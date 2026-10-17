@@ -11,24 +11,24 @@
  },
  "model_runs": {
   "standard": {
-   "runs_without": 2,
-   "runs_with": 2,
-   "lost_without_avg": 69.0,
-   "lost_without_max": 69.0,
+   "runs_without": 4,
+   "runs_with": 4,
+   "lost_without_avg": 115.15,
+   "lost_without_max": 253.6,
    "lost_with_max": 0.0
   },
   "holdout": {
-   "runs_without": 2,
-   "runs_with": 2,
-   "lost_without_avg": 156.95,
+   "runs_without": 4,
+   "runs_with": 4,
+   "lost_without_avg": 127.82,
    "lost_without_max": 156.95,
    "lost_with_max": 0.0
   },
   "final": {
-   "runs_without": 2,
-   "runs_with": 2,
-   "lost_without_avg": 24.0,
-   "lost_without_max": 24.0,
+   "runs_without": 4,
+   "runs_with": 3,
+   "lost_without_avg": 27.86,
+   "lost_without_max": 39.45,
    "lost_with_max": 0.0
   }
  },
@@ -47,5 +47,5 @@
   "total": 13,
   "as_expected": 13
  },
- "unit_tests": 275
+ "unit_tests": 276
 }

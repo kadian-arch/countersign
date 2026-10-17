@@ -174,6 +174,12 @@ section.block { padding: 60px 0 6px; scroll-margin-top: 72px; }
 .tile .n.good { color: var(--allow); text-shadow: 0 0 24px var(--allow-soft); } .tile .n.bad { color: var(--refuse); text-shadow: 0 0 24px var(--refuse-soft); } .tile .n.wait { color: var(--hold); text-shadow: 0 0 24px var(--hold-soft); }
 .tile.flash { animation: flash .9s ease-out; }
 @keyframes flash { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--a3) 70%, transparent); border-color: var(--a3); } 100% { box-shadow: 0 0 0 16px transparent; } }
+.tour { list-style: none; margin: 0 0 16px; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; counter-reset: none; }
+.tour li { border: 1px solid var(--line); border-radius: 14px; padding: 13px 15px; background: var(--glass2); font-size: 14px; line-height: 1.5; color: var(--muted); }
+.tour b { display: block; color: var(--ink); font: 700 15px var(--display); margin-bottom: 4px; }
+.tour em { font-style: normal; color: var(--ink); overflow-wrap: anywhere; }
+@media (max-width: 960px) { .tour { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .tour { grid-template-columns: 1fr; } }
 .customer { margin-bottom: 16px; }
 .orderform { display: grid; grid-template-columns: 1fr 1.3fr 1.6fr auto; gap: 12px; align-items: end; margin-top: 4px; }
 .orderform label { margin-top: 10px; }
@@ -355,6 +361,12 @@ footer .base { display: flex; flex-wrap: wrap; justify-content: space-between; g
     <div class="head"><div class="eyebrow">Working now</div><h2>The live shop</h2>
       <p>A working shop with its own orders, suppliers and PayPal account. Send it an email and an AI assistant handles it. Every refund or payment it tries goes through Countersign, and everything below updates as it happens.</p></div>
     <div class="tiles" id="tiles"></div>
+    <ol class="tour" id="tour" aria-label="Four things to try">
+      <li><b>1. Buy something</b><span>Place a test order below with your own email address. It is a real payment in PayPal's sandbox, with no money involved.</span></li>
+      <li><b>2. Ask for a refund</b><span>Write to the shop from that address (<em id="tourmail">use the message form below</em>). The assistant checks the order, PayPal makes the refund and the reply comes back.</span></li>
+      <li><b>3. Try to cheat</b><span>Ask for a refund on someone else's order, or tell the shop a supplier has new bank details. Watch what the guard does.</span></li>
+      <li><b>4. Ask for something big</b><span>A refund over the limit waits in the owner's queue, and the owner gets an email with a link to approve or refuse it.</span></li>
+    </ol>
     <div class="card pad customer">
       <h3 class="t">Be a customer</h3>
       <p class="sub" id="ordersub">Buy something from the shop with your own email address. It is a real payment in the PayPal sandbox, with no money involved. Then write to the shop from that address and ask for a refund.</p>
@@ -566,7 +578,7 @@ function renderQueue(pending) {
 let grid = null;
 window.setGridTheme = () => { $("grid").className = document.documentElement.dataset.theme === "light" ? "ag-theme-quartz" : "ag-theme-quartz-dark"; };
 function renderGrid(rows) {
-  const data = rows.map(a => ({ id: a.id, when: (a.ts || "").slice(11, 19), what: describe(a), from: a.sender || "owner", verdict: a.verdict, status: a.status, why: (a.reasons || []).map(r => r.code).join(", "), ref: a.paypal_ref || "" }));
+  const data = rows.map(a => ({ id: a.id, when: a.ts ? new Date(a.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "", what: describe(a), from: a.sender || "owner", verdict: a.verdict, status: a.status, why: (a.reasons || []).map(r => r.code).join(", "), ref: a.paypal_ref || "" }));
   if (!window.agGrid) return;
   setGridTheme();
   const badge = p => el("span", "badge " + p.value, p.value);
@@ -585,7 +597,7 @@ function apply(s) {
   sw.classList.toggle("hidden", !s.modes.live);
   sw.querySelectorAll("button").forEach(b => b.classList.toggle("on", (b.dataset.m === "live") === live));
   $("tokenrow").classList.toggle("hidden", !live);
-  $("reset").textContent = live ? "Give the shop fresh orders" : "Start this shop over"; $("reset").disabled = !!s.resetting;
+  $("reset").textContent = live ? "Give the shop fresh orders (owner)" : "Start this shop over"; $("reset").disabled = !!s.resetting;
   $("resetnote").textContent = s.resetting ? "Setting up fresh paid orders in PayPal. This takes about a minute." : (s.error || "");
   $("msend").disabled = !s.agent || !!s.resetting; $("noagent").classList.toggle("hidden", s.agent);
   $("note").textContent = live ? "This shop is connected to a PayPal sandbox account. A request the guard allows really goes to PayPal, and its PayPal reference shows in the activity."
@@ -593,6 +605,7 @@ function apply(s) {
   renderTiles(s.money); renderQueue(s.pending); renderGrid(s.recent); renderInbox(s.inbox); renderPaypal(s.paypal);
   $("inboxsub").textContent = (s.mailbox ? "Email this shop at " + s.mailbox.address + " and watch it here, or write a message below. The assistant reads it and replies."
     : "Write as a customer, a supplier or the owner. The assistant reads it and replies.") + (live ? " This shop is shared, so messages sent to it are visible to everyone who opens the page. Other people's addresses are hidden." : "");
+  $("tourmail").textContent = s.mailbox ? s.mailbox.address : "use the message form below";
   $("ordersub").textContent = live ? "Buy something from the shared shop with your own email address. It is a real payment in the PayPal sandbox, with no money involved. Then write to the shop from that address and ask for a refund."
     : "Buy something from your private shop with any email address, then write to the shop from that address and ask for a refund.";
   const l = s.ledger, line = $("ledger"); line.replaceChildren();
@@ -801,6 +814,8 @@ function emailPane(pane) {
   if (m) {
     const owner_to = (S.settings && S.settings.owner_email) || "the owner";
     pane.append(switchRow("Email " + owner_to + " when a request is waiting for approval", "f-alerts", !S.settings || S.settings.alerts !== false));
+    const la = m.alert;
+    pane.append(el("p", "note", la ? "Last email to the owner: " + (la.ok ? "sent at " : "failed at ") + new Date(la.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + (la.ok ? ". If it did not arrive, look in the spam folder." : ": " + (la.error || "unknown error")) : "No email has been sent to the owner since the server started."));
     pane.append(el("p", "note", "The email says what was asked, who asked and why it was held, with a link to a page where you approve or refuse it. The page asks before it does anything, and approving runs the checks again first. Changing this needs the owner token."));
     const sv = el("button", "btn small", "Save"); sv.style.marginTop = "10px"; sv.onclick = () => save({ alerts: $("f-alerts").checked }, "Saved."); pane.append(sv);
   }
