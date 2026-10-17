@@ -13,3 +13,12 @@ body { margin: 0; background: #04050d; color: #f0f2ff; font-family: "Figtree", "
 .bar .tabs button { background: transparent; border-color: transparent; color: #a3acd6; }
 .bar .tabs button.on { background: #6a82ff33; border-color: #6a82ff88; color: #f0f2ff; }
 @media (max-width: 1150px) { .bar .dim { display: none; } .bar .tabs { flex: 1; } }
+.frame { display: flex; flex-direction: column; height: 100%; }
+.strip { margin: 0; padding: 9px 16px; font-size: 14px; background: #ffc94d1f; color: #f0f2ff; border-bottom: 1px solid #ffc94d55; }
+.strip a { color: #ffc94d; }
+@media (max-width: 700px) {
+  .bar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 6px 10px; }
+  .bar .editbtn { display: none; }   /* the builder needs a screen wider than a phone */
+  .bar .tabs { flex-basis: 100%; }
+  .strip { font-size: 13px; }
+}

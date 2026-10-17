@@ -9,6 +9,11 @@ import { initialState } from "./state";
 import { darkTheme } from "./theme";
 import { widgets } from "./widgets";
 
+// In edit mode the assistant sits on the left and the builder panels on the right, so the page keeps room to be seen
+const PANELS = { edit: { left: ["ai"], right: ["edit", "data"] }, view: { right: ["filters"] } } as never;
+// a phone has no room for a side panel, so it shows the dashboard alone
+const PHONE_PANELS = { edit: { left: [], right: [] }, view: { left: [], right: [] } } as never;
+
 const LICENSE = import.meta.env.VITE_AG_STUDIO_LICENSE as string | undefined;
 
 // the owner token, if the owner opened the main page with it, unmasks addresses here the same way
@@ -31,12 +36,14 @@ export function App() {
   const ai = useMemo(() => (data ? (params: { api: AgStudioApi }) => harness(params.api, serverAdapter(token), data, runs) : undefined), [data, runs]);
 
   const definition = useMemo(() => (data ? sources(data, runs) : undefined), [data, runs]);
-  const start = useMemo(() => (data ? initialState(data.actions.length > 0) : undefined), [data]);
+  const phone = window.innerWidth > 0 && window.innerWidth < 700;
+  const start = useMemo(() => (data ? initialState(data.actions.length > 0, phone) : undefined), [data, phone]);
 
   if (error) return <p className="note">{error} <a href="/">Back to the shop</a></p>;
   if (!ready || !data || !definition || !start) return <p className="note">Loading the shop's numbers…</p>;
   return (
     <AgStudioProvider licenseKey={LICENSE} modules={[AgStudioAiModule]}>
+      <div className="frame">
       <header className="bar">
         <a href="/" className="back">&larr; The shop</a>
         <b>{data.shop}</b>
@@ -46,14 +53,21 @@ export function App() {
           ))}
         </nav>
         <span className="dim">what the agent asked for, and what Countersign decided</span>
-        <button onClick={() => setMode(mode === "view" ? "edit" : "view")}>
+        <button className="editbtn" onClick={() => setMode(mode === "view" ? "edit" : "view")}>
           {mode === "view" ? "Edit and ask the assistant" : "Done editing"}
         </button>
       </header>
-      <AgStudio style={{ height: "calc(100% - 44px)" }} mode={mode} theme={darkTheme} data={definition} widgets={widgets as never}
+      {page === "Live shop" && data.actions.length === 0 && (
+        <p className="strip">
+          Nobody has asked this shop for anything since it was last reset, so there is nothing to chart here yet.
+          Send it a request from <a href="/#try">Try the guard</a> or <a href="/#shop">the shop</a> and reload, or open Recorded runs for the evidence from real model runs.
+        </p>
+      )}
+      <AgStudio style={{ flex: 1, minHeight: 0 }} mode={mode} theme={darkTheme} panels={phone ? PHONE_PANELS : PANELS} data={definition} widgets={widgets as never}
         initialState={start} ai={ai as never}
         onApiReady={(e: { api: AgStudioApi }) => { setApi(e.api); setPage(e.api.getState().selectedPageId); }}
         onStateUpdated={() => { if (api) setPage(api.getState().selectedPageId); }} />
+      </div>
     </AgStudioProvider>
   );
 }

@@ -486,7 +486,7 @@ function toast(text, kind) { const t = el("div", "toast " + (kind || ""), text);
   document.querySelectorAll(".reveal").forEach(n => io ? io.observe(n) : n.classList.add("in"));
   const seal = $("seal");
   document.addEventListener("pointermove", e => { if (window.innerWidth < 900) return; const x = (e.clientX / innerWidth - .5) * 10, y = (e.clientY / innerHeight - .5) * -10; seal.style.transform = "perspective(900px) rotateY(" + x + "deg) rotateX(" + y + "deg)"; });
-  const links = [...document.querySelectorAll("#links a")], secs = links.map(a => document.querySelector(a.getAttribute("href")));
+  const links = [...document.querySelectorAll("#links a")], secs = links.map(a => { const h = a.getAttribute("href"); return h.startsWith("#") ? document.querySelector(h) : null; });   // a link to another page has no section
   addEventListener("scroll", () => { const y = scrollY + 140; let cur = -1; secs.forEach((s, i) => { if (s && s.offsetTop <= y) cur = i; }); links.forEach((a, i) => a.classList.toggle("on", i === cur)); }, { passive: true });
 })();
 

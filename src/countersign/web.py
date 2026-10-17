@@ -7,7 +7,9 @@ and changing anything or approving a held action needs the owner token.
 The page keeps itself current: every change to a shop bumps a version, and /api/stream pushes the new state.
 """
 import asyncio
+import gzip
 import html
+import mimetypes
 import json
 import os
 import re
@@ -884,8 +886,22 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
     def dashboard_slash():
         return RedirectResponse("/dashboard/")
 
+    compressed: dict[tuple, bytes] = {}
+
+    def packed(request: HttpRequest, target: Path) -> Response:
+        """The dashboard's files are named by their content, so they can be cached for good, and the big script is sent
+        compressed (it is almost 6 MB as written and the host does not compress for us)."""
+        kind = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        headers = {"Cache-Control": "public, max-age=31536000, immutable" if target.parent.name == "assets" else "no-cache"}
+        if "gzip" not in request.headers.get("accept-encoding", "") or target.stat().st_size < 2000:
+            return FileResponse(target, media_type=kind, headers=headers)
+        key = (str(target), target.stat().st_mtime_ns)
+        if key not in compressed:
+            compressed[key] = gzip.compress(target.read_bytes(), 6)
+        return Response(compressed[key], media_type=kind, headers={**headers, "Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
+
     @app.get("/dashboard/{path:path}")
-    def dashboard(path: str = ""):
+    def dashboard(request: HttpRequest, path: str = ""):
         index = DASHBOARD / "index.html"
         if not index.is_file():
             return HTMLResponse(alerts.page("Dashboard not built", "<h1>The dashboard is not built here</h1><p>It is the AG Studio app in the "
@@ -893,7 +909,7 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
                                             "or use the hosted copy.</p>"), 404)
         target = (DASHBOARD / path).resolve()
         if path and target.is_file() and DASHBOARD.resolve() in target.parents:
-            return FileResponse(target)
+            return packed(request, target)
         return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
     @app.get("/brand/{name}")

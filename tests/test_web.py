@@ -65,6 +65,14 @@ class WebTests(unittest.TestCase):
                 self.assertEqual(self.c.get("/dashboard/some/page").text, "<p>dash</p>")   # the app routes itself
                 self.assertEqual(self.c.get("/dashboard/..%2fsecret.txt").text, "<p>dash</p>")   # never a file outside the build
                 self.assertEqual(self.c.get("/dashboard", follow_redirects=False).status_code, 307)
+                big = "x" * 5000
+                (built / "assets" / "b.js").write_text(big, encoding="utf-8")
+                packed = self.c.get("/dashboard/assets/b.js", headers={"Accept-Encoding": "gzip"})
+                self.assertEqual((packed.headers["content-encoding"], packed.text), ("gzip", big))
+                self.assertIn("immutable", packed.headers["cache-control"])
+                plain = self.c.get("/dashboard/assets/b.js", headers={"Accept-Encoding": "identity"})
+                self.assertNotIn("content-encoding", plain.headers)
+                self.assertEqual(self.c.get("/dashboard/").headers["cache-control"], "no-cache")
 
     def test_the_page_and_state_load(self):
         self.assertIn("Countersign", self.c.get("/").text)
@@ -172,6 +180,15 @@ class WebTests(unittest.TestCase):
             self.assertNotIn("gmail.com", str(day))
         self.assertEqual(self.c.get("/api/days/nope").status_code, 404)
         self.assertEqual(self.c.get("/api/days/..%2f..%2fweb").status_code, 404)
+
+    def test_the_nav_links_to_sections_that_exist_and_the_script_that_reads_them_copes_with_other_pages(self):
+        import re
+        page = self.c.get("/").text
+        nav = re.search(r'id="links">(.*?)</div>', page, re.S).group(1)
+        for href in re.findall(r'href="([^"]+)"', nav):
+            if href.startswith("#"):
+                self.assertIn(f'id="{href[1:]}"', page, href)
+        self.assertNotIn('document.querySelector(a.getAttribute("href"))', page)   # a link such as /dashboard/ is not a selector
 
     def test_recorded_runs_come_as_one_flat_table_with_both_sides_of_every_email(self):
         rows = self.c.get("/api/runs").json()

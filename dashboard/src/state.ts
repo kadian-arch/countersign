@@ -2,12 +2,34 @@ import type { AgReportState } from "ag-studio";
 
 const title = (text: string) => ({ title: { enabled: true, text } });
 
+type Slot = { xTrack: number; yTrack: number; xSpan: number; ySpan: number };
+
+// On a phone the same widgets stack: tiles two to a row, everything else the full width
+function stacked(layout: Record<string, Slot>): Record<string, Slot> {
+  const out: Record<string, Slot> = {};
+  let y = 0, half = false;
+  for (const [id, s] of Object.entries(layout).sort(([, a], [, b]) => a.yTrack - b.yTrack || a.xTrack - b.xTrack)) {
+    if (s.xSpan <= 6) {
+      out[id] = { xTrack: half ? 12 : 0, yTrack: y, xSpan: 12, ySpan: s.ySpan };
+      if (half) y += s.ySpan;
+      half = !half;
+    } else {
+      if (half) { y += 4; half = false; }
+      out[id] = { xTrack: 0, yTrack: y, xSpan: 24, ySpan: s.ySpan };
+      y += s.ySpan;
+    }
+  }
+  return out;
+}
+
+const place = (phone: boolean, layout: Record<string, Slot>) => (phone ? stacked(layout) : layout);
+
 // The dashboard a visitor sees first. Studio lets them change all of it in edit mode.
-export const initialState = (liveHasData: boolean) => ({
+export const initialState = (liveHasData: boolean, phone = false) => ({
   selectedPageId: liveHasData ? "Live shop" : "Recorded runs",
   pages: [{
     id: "Live shop",
-    layout: { columns: 24, rowHeight: 24, widgetPadding: 6 },
+    layout: { columns: 24, rowHeight: 24, widgetPadding: 6, minWidth: phone ? 300 : 720 },
     widgets: {
       lost: { type: "value", dataMapping: { value: [{ id: "actions.lost", aggregation: "sum" }] }, format: title("Money lost") },
       stopped: { type: "value", dataMapping: { value: [{ id: "actions.stopped", aggregation: "sum" }] }, format: title("Money stopped") },
@@ -22,19 +44,19 @@ export const initialState = (liveHasData: boolean) => ({
         format: title("Every request, newest last"),
       },
     },
-    widgetLayout: {
+    widgetLayout: place(phone, {
       lost: { xTrack: 0, yTrack: 0, xSpan: 6, ySpan: 4 },
       stopped: { xTrack: 6, yTrack: 0, xSpan: 6, ySpan: 4 },
       requests: { xTrack: 12, yTrack: 0, xSpan: 6, ySpan: 4 },
       events: { xTrack: 18, yTrack: 0, xSpan: 6, ySpan: 4 },
-      ribbon: { xTrack: 0, yTrack: 4, xSpan: 24, ySpan: 4 },
-      reasons: { xTrack: 0, yTrack: 8, xSpan: 12, ySpan: 9 },
-      perDay: { xTrack: 12, yTrack: 8, xSpan: 12, ySpan: 9 },
-      table: { xTrack: 0, yTrack: 17, xSpan: 24, ySpan: 12 },
-    },
+      ribbon: { xTrack: 0, yTrack: 4, xSpan: 24, ySpan: 5 },
+      reasons: { xTrack: 0, yTrack: 9, xSpan: 12, ySpan: 9 },
+      perDay: { xTrack: 12, yTrack: 9, xSpan: 12, ySpan: 9 },
+      table: { xTrack: 0, yTrack: 18, xSpan: 24, ySpan: 12 },
+    }),
   }, {
     id: "Recorded runs",
-    layout: { columns: 24, rowHeight: 24, widgetPadding: 6 },
+    layout: { columns: 24, rowHeight: 24, widgetPadding: 6, minWidth: phone ? 300 : 720 },
     widgets: {
       lostWithout: { type: "value", dataMapping: { value: [{ id: "runs.lost_without", aggregation: "sum" }] }, format: title("Lost without it") },
       lostWith: { type: "value", dataMapping: { value: [{ id: "runs.lost_with", aggregation: "sum" }] }, format: title("Lost with it") },
@@ -50,16 +72,16 @@ export const initialState = (liveHasData: boolean) => ({
         format: title("Every email in every run"),
       },
     },
-    widgetLayout: {
+    widgetLayout: place(phone, {
       lostWithout: { xTrack: 0, yTrack: 0, xSpan: 6, ySpan: 4 },
       lostWith: { xTrack: 6, yTrack: 0, xSpan: 6, ySpan: 4 },
       leaked: { xTrack: 12, yTrack: 0, xSpan: 6, ySpan: 4 },
       emails: { xTrack: 18, yTrack: 0, xSpan: 6, ySpan: 4 },
-      without: { xTrack: 0, yTrack: 4, xSpan: 12, ySpan: 5 },
-      withIt: { xTrack: 12, yTrack: 4, xSpan: 12, ySpan: 5 },
-      byInbox: { xTrack: 0, yTrack: 9, xSpan: 12, ySpan: 9 },
-      byModel: { xTrack: 12, yTrack: 9, xSpan: 12, ySpan: 9 },
-      attacks: { xTrack: 0, yTrack: 18, xSpan: 24, ySpan: 12 },
-    },
+      without: { xTrack: 0, yTrack: 4, xSpan: 12, ySpan: 6 },
+      withIt: { xTrack: 12, yTrack: 4, xSpan: 12, ySpan: 6 },
+      byInbox: { xTrack: 0, yTrack: 10, xSpan: 12, ySpan: 9 },
+      byModel: { xTrack: 12, yTrack: 10, xSpan: 12, ySpan: 9 },
+      attacks: { xTrack: 0, yTrack: 19, xSpan: 24, ySpan: 12 },
+    }),
   }],
 }) as unknown as AgReportState;
