@@ -31,7 +31,7 @@ from . import emails, mailbox
 from . import profile as profiles
 from .agent import Agent
 from .channel import FAILING, PASSING, authenticated, route
-from .days import list_days
+from .days import list_days, run_rows
 from .evaluate import report
 from .guard import Guard, Request, Verdict
 from .inbox import Email
@@ -684,6 +684,7 @@ class Hub:
         self.totals = {"attempts": 0, "ran": 0, "held": 0, "refused": 0, "failed": 0, "checked": 0}
         self.broke: list[dict] = []
         self.mailer = None
+        self.studio_llm = llm   # the dashboard's assistant can use its own order of providers (STUDIO_PROVIDERS)
         self.orders: list[float] = []
         self.alert_times: list[float] = []
         self.studio_times: dict[str, list[float]] = {}
@@ -804,11 +805,11 @@ def reseed_live(ws: Workspace):
               tag=ws.hub.shop_tag)
 
 
-def build_llm():
+def build_llm(var: str = "LLM_PROVIDERS"):
     """A model for the agent and for translating rules, if this server has keys for one."""
     from .llm import LLM, providers_from_env
     try:
-        providers = providers_from_env()
+        providers = providers_from_env(var=var)
     except Exception:
         providers = []
     return LLM(providers) if providers else None
@@ -822,6 +823,8 @@ def default_mode() -> str:
 def create_app(mode: str | None = None, owner_token: str | None = None, llm="auto", live_backend=None, seeder=None, mailer=None) -> FastAPI:
     hub = Hub(mode or default_mode(), owner_token or os.environ.get("OWNER_TOKEN"), build_llm() if llm == "auto" else llm,
               live_backend, seeder)
+    if llm == "auto" and os.environ.get("STUDIO_PROVIDERS"):
+        hub.studio_llm = build_llm("STUDIO_PROVIDERS") or hub.llm
     settings = mailbox.Settings.from_env(os.environ) if mailer is None else None
 
     def take(incoming) -> bool:
@@ -950,7 +953,7 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
     @app.post("/api/studio/turn")
     async def studio_turn(request: HttpRequest, x_owner_token: str | None = Header(None)):
         """One model turn for the dashboard's assistant (AG Studio asks for these one at a time)."""
-        if hub.llm is None:
+        if hub.studio_llm is None:
             raise HTTPException(503, "the assistant has no model key on this server")
         raw = await request.body()
         if len(raw) > 250_000:
@@ -965,7 +968,7 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
         visitor = forwarded or (request.client.host if request.client else "unknown")
         hub.allow_studio(visitor, hub.is_owner(x_owner_token))
         try:
-            return await asyncio.to_thread(studio.turn, hub.llm, body, "t" + secrets.token_hex(6))
+            return await asyncio.to_thread(studio.turn, hub.studio_llm, body, "t" + secrets.token_hex(6))
         except studio.BadTurn as e:
             raise HTTPException(400, str(e))
         except LLMUnavailable as e:
@@ -1094,6 +1097,11 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
     @app.get("/api/days")
     def days():
         return list_days(STATIC / "days")
+
+    @app.get("/api/runs")
+    def runs():
+        """The recorded model runs as one flat table, for the dashboard."""
+        return run_rows(STATIC / "days")
 
     @app.get("/api/days/{day_id}")
     def day(day_id: str):

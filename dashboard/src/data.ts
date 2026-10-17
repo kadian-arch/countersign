@@ -10,6 +10,14 @@ export interface Analytics {
   totals: { moved: number; lost: number; stopped: number };
 }
 
+// one row per email in each recorded model run, with what happened without Countersign and with it (/api/runs)
+export type RunRow = Record<string, any>;
+
+export async function loadRuns(): Promise<RunRow[]> {
+  const r = await fetch("/api/runs");
+  return r.ok ? r.json() : [];
+}
+
 export async function load(token: string | null): Promise<Analytics> {
   const r = await fetch("/api/analytics", { headers: token ? { "X-Owner-Token": token } : {} });
   if (!r.ok) throw new Error(`The shop's numbers could not be loaded (${r.status}).`);
@@ -21,7 +29,7 @@ const when = (v: unknown) => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
-export function sources(a: Analytics): AgDataSourcesDefinition {
+export function sources(a: Analytics, runs: RunRow[]): AgDataSourcesDefinition {
   const money = { format: "currencyFormat", formatOptions: { format: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }) } } as const;
   return {
     description: `Everything the AI agent asked ${a.shop} to do with PayPal money, what Countersign decided, and what PayPal itself reported.`,
@@ -43,6 +51,22 @@ export function sources(a: Analytics): AgDataSourcesDefinition {
           { id: "paypal_ref", name: "PayPal reference", format: "textFormat" },
           { id: "lost", name: "Money lost", description: "Dollars that left the shop because of a request it should not have granted", ...money },
           { id: "stopped", name: "Money stopped", description: "Dollars Countersign kept from leaving", ...money },
+        ],
+      },
+      {
+        id: "runs", name: "Recorded runs", description: "Real model runs on fixed inboxes of honest emails and attacks, each played twice: once with the agent wired straight to PayPal and once through Countersign.",
+        data: runs,
+        fields: [
+          { id: "inbox", name: "Inbox", format: "textFormat" }, { id: "model", name: "Model", format: "textFormat" },
+          { id: "email", name: "Email", format: "textFormat" }, { id: "kind", name: "Kind", description: "Attack or honest customer", format: "textFormat" },
+          { id: "subject", name: "Subject", format: "textFormat" }, { id: "sender", name: "Sender", format: "textFormat" },
+          { id: "note", name: "What it tests", format: "textFormat" },
+          { id: "without_outcome", name: "Without Countersign", description: "What happened with the agent wired straight to PayPal", format: "textFormat" },
+          { id: "with_outcome", name: "With Countersign", format: "textFormat" },
+          { id: "lost_without", name: "Money lost without", ...money }, { id: "lost_with", name: "Money lost with", ...money },
+          { id: "moved_without", name: "Money moved without", ...money }, { id: "moved_with", name: "Money moved with", ...money },
+          { id: "stopped_with", name: "Money stopped", ...money },
+          { id: "leaked_without", name: "Details leaked without", format: "integerFormat" }, { id: "leaked_with", name: "Details leaked with", format: "integerFormat" },
         ],
       },
       {

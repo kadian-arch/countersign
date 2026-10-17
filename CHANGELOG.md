@@ -16,6 +16,8 @@
 - The assistant's prompt in the live shop adds a greeting line. The prompt the recorded runs were measured with is unchanged and pinned by a test.
 - CI runs on a pinned Ubuntu image.
 - An AG Studio dashboard at `/dashboard`: the shop's numbers as tiles, charts and a grid, a custom verdict ribbon widget and a dark theme that matches the site. In edit mode an AI assistant answers questions about the requests through `POST /api/studio/turn`, which keeps the model keys on the server, is rate limited, and repairs tool arguments a model gets slightly wrong.
+- The dashboard has a second page, Recorded runs, built from the real model runs (`GET /api/runs`): money lost with and without Countersign by inbox and by model, how each email ended on each side, and every email in a grid. It opens first when the live shop has no requests yet. The assistant can answer questions about both pages.
+- `STUDIO_PROVIDERS` gives the dashboard's assistant its own order of model providers.
 - `/api/analytics` hides other visitors' addresses on the shared shop like the rest of the page, and carries the tables the dashboard reads.
 - A model call made for someone waiting at a screen moves to the next model at once when one is rate limited, instead of waiting it out.
 

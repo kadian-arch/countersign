@@ -6,6 +6,7 @@ import { palette } from "./theme";
 // "Verdict ribbon": one bar split by outcome, so the share that ran, was held or was refused reads at a glance
 const colours: Record<string, string> = {
   Ran: palette.allow, Held: palette.hold, Refused: palette.refuse, Failed: palette.a2, "Declined by the owner": palette.a3,
+  "Lost money": palette.refuse, "Leaked private details": palette.a4, "Held for the owner": palette.hold, "Nothing went wrong": palette.allow,
 };
 
 function Ribbon({ widgetApi, dataMapping }: AgWidgetParams<any>) {

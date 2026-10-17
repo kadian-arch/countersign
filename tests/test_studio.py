@@ -96,6 +96,19 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(json.loads(out[0]["arguments"])["type"], {"id": "data"})
 
 
+class ProviderOrderTests(unittest.TestCase):
+    ENV = {"LLM_PROVIDERS": "cerebras,groq,gemini", "CEREBRAS_API_KEY": "a", "GROQ_API_KEY": "b", "GEMINI_API_KEY": "c"}
+
+    def test_the_assistant_can_have_its_own_order_of_providers(self):
+        from countersign.llm import providers_from_env
+        self.assertEqual([p.name for p in providers_from_env(self.ENV)], ["cerebras", "groq", "gemini"])
+        self.assertEqual([p.name for p in providers_from_env({**self.ENV, "STUDIO_PROVIDERS": "gemini,groq"}, var="STUDIO_PROVIDERS")], ["gemini", "groq"])
+
+    def test_without_its_own_order_it_uses_the_shops(self):
+        from countersign.llm import providers_from_env
+        self.assertEqual([p.name for p in providers_from_env(self.ENV, var="STUDIO_PROVIDERS")], ["cerebras", "groq", "gemini"])
+
+
 class EndpointTests(unittest.TestCase):
     def client(self, llm):
         return TestClient(create_app("sim", owner_token="secret", llm=llm))

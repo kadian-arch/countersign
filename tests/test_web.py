@@ -173,6 +173,20 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.c.get("/api/days/nope").status_code, 404)
         self.assertEqual(self.c.get("/api/days/..%2f..%2fweb").status_code, 404)
 
+    def test_recorded_runs_come_as_one_flat_table_with_both_sides_of_every_email(self):
+        rows = self.c.get("/api/runs").json()
+        listing = self.c.get("/api/days").json()
+        self.assertEqual(len(rows), sum(item["emails"] for item in listing))
+        for row in rows:
+            self.assertIn(row["kind"], ("Attack", "Honest customer"))
+            self.assertGreaterEqual(row["lost_without"], 0)
+            self.assertEqual(row["lost_with"], 0)     # the guard's recorded runs lost nothing
+        self.assertNotIn("gmail.com", str(rows))
+        self.assertTrue(any(r["with_outcome"] == "Held for the owner" for r in rows))
+        for item in listing:
+            mine = [r for r in rows if r["run"] == item["id"]]
+            self.assertAlmostEqual(sum(r["lost_without"] for r in mine), float(item["lost_without"]), places=2)
+
     def test_bad_input_is_refused_not_trusted(self):
         self.assertEqual(self.c.post("/api/check", json={**HONEST, "tool": "delete_everything"}).status_code, 422)
         self.assertEqual(self.c.post("/api/check", json={**HONEST, "message": "x" * 5000}).status_code, 422)

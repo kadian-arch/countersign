@@ -4,7 +4,7 @@ import { AgStudioAiModule } from "ag-studio";
 import type { AgStudioApi } from "ag-studio";
 import { serverAdapter } from "./adapter";
 import { harness } from "./analyst";
-import { load, sources, type Analytics } from "./data";
+import { load, loadRuns, sources, type Analytics, type RunRow } from "./data";
 import { initialState } from "./state";
 import { darkTheme } from "./theme";
 import { widgets } from "./widgets";
@@ -16,31 +16,44 @@ const token = () => { try { return sessionStorage.getItem("cs_owner_token"); } c
 
 export function App() {
   const [data, setData] = useState<Analytics | null>(null);
+  const [runs, setRuns] = useState<RunRow[]>([]);
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   const [mode, setMode] = useState<"view" | "edit">("view");
+  const [api, setApi] = useState<AgStudioApi | null>(null);
+  const [page, setPage] = useState("");
 
   useEffect(() => {
     document.body.dataset.agThemeMode = "dark";
-    load(token()).then(setData, (e) => setError(String(e.message ?? e)));
+    Promise.all([load(token()), loadRuns()]).then(([d, r]) => { setData(d); setRuns(r); setReady(true); }, (e) => setError(String(e.message ?? e)));
   }, []);
 
-  const ai = useMemo(() => (data ? (params: { api: AgStudioApi }) => harness(params.api, serverAdapter(token), data) : undefined), [data]);
+  const ai = useMemo(() => (data ? (params: { api: AgStudioApi }) => harness(params.api, serverAdapter(token), data, runs) : undefined), [data, runs]);
 
-  const definition = useMemo(() => (data ? sources(data) : undefined), [data]);
+  const definition = useMemo(() => (data ? sources(data, runs) : undefined), [data, runs]);
+  const start = useMemo(() => (data ? initialState(data.actions.length > 0) : undefined), [data]);
 
   if (error) return <p className="note">{error} <a href="/">Back to the shop</a></p>;
-  if (!data || !definition) return <p className="note">Loading the shop's numbers…</p>;
+  if (!ready || !data || !definition || !start) return <p className="note">Loading the shop's numbers…</p>;
   return (
     <AgStudioProvider licenseKey={LICENSE} modules={[AgStudioAiModule]}>
       <header className="bar">
         <a href="/" className="back">&larr; The shop</a>
-        <b>{data.shop}</b><span className="dim">what the agent asked for, and what Countersign decided</span>
+        <b>{data.shop}</b>
+        <nav className="tabs">
+          {["Live shop", "Recorded runs"].map((id) => (
+            <button key={id} className={page === id ? "on" : ""} onClick={() => { if (api) { api.setState({ ...api.getState(), selectedPageId: id }); setPage(id); } }}>{id}</button>
+          ))}
+        </nav>
+        <span className="dim">what the agent asked for, and what Countersign decided</span>
         <button onClick={() => setMode(mode === "view" ? "edit" : "view")}>
           {mode === "view" ? "Edit and ask the assistant" : "Done editing"}
         </button>
       </header>
       <AgStudio style={{ height: "calc(100% - 44px)" }} mode={mode} theme={darkTheme} data={definition} widgets={widgets as never}
-        initialState={initialState} ai={ai as never} />
+        initialState={start} ai={ai as never}
+        onApiReady={(e: { api: AgStudioApi }) => { setApi(e.api); setPage(e.api.getState().selectedPageId); }}
+        onStateUpdated={() => { if (api) setPage(api.getState().selectedPageId); }} />
     </AgStudioProvider>
   );
 }

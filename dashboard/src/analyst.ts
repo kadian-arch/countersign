@@ -1,6 +1,6 @@
 import { createAiHarness, directLlmRunner } from "ag-studio";
 import type { AgAiTool, AgAiToolContext, AgAiToolInvocation, AgLlmAdapter, AgStudioApi } from "ag-studio";
-import type { Analytics } from "./data";
+import type { Analytics, RunRow } from "./data";
 
 // Studio's own agents write structured queries against a large schema. That works with the biggest paid models and
 // not with the free ones this project runs on, so the first agent here answers from a handful of plain tools that
@@ -30,6 +30,8 @@ or is refused. Your job is to explain what happened, using the tools. Never gues
 Answer in short plain sentences, say the request numbers and amounts, and give the reason in words, not only the code.
 Write every reason code inside backticks, like \`over_limit\`.
 ${GLOSSARY}
+The dashboard also holds recorded model runs (compare_runs, find_recorded_emails): the same AI agent played against fixed inboxes of
+honest emails and attacks, once wired straight to PayPal and once through Countersign. Use them for questions about how well it works.
 If you are asked to build or change the dashboard itself (add a chart, move a widget), delegate: first to the page agent to
 place it, then to the widget agent to configure it. Everything else you answer yourself with the tools below.`;
 
@@ -48,7 +50,7 @@ function tool(name: string, description: string, properties: Record<string, unkn
   };
 }
 
-export function analystTools(a: Analytics): AgAiTool[] {
+export function analystTools(a: Analytics, runs: RunRow[]): AgAiTool[] {
   const rows = a.actions;
   const by: Record<string, (r: Row) => string[]> = {
     outcome: (r) => [r.outcome], verdict: (r) => [r.verdict], kind: (r) => [r.kind], requested_by: (r) => [r.requested_by],
@@ -97,6 +99,28 @@ export function analystTools(a: Analytics): AgAiTool[] {
       if (!r) throw new Error(`there is no request ${id}`);
       return { ...brief(r), paypal_reference: r.paypal_ref || "none (PayPal was not called)", money_lost: usd(r.lost), money_stopped: usd(r.stopped), asked_by_the_owner: r.from_owner };
     }),
+    tool("compare_runs", "The recorded model runs: how an AI agent wired straight to PayPal did on fixed inboxes of honest emails and attacks, against the same agent through Countersign. Groups the emails and adds up money lost, money stopped and details leaked for each side.", {
+      by: { type: "string", enum: ["inbox", "model", "kind", "without_outcome", "with_outcome"], description: "What to group by (default: everything together)." },
+    }, ({ by: key }) => {
+      const groups = new Map<string, Row[]>();
+      for (const r of runs) { const k = key ? String(r[key as string]) : "all runs"; groups.set(k, [...(groups.get(k) ?? []), r]); }
+      const sum = (rs: Row[], f: string) => rs.reduce((n, r) => n + Number(r[f] || 0), 0);
+      return [...groups].map(([name, rs]) => ({
+        [(key as string) || "group"]: name, emails: rs.length, attacks: rs.filter((r) => r.kind === "Attack").length,
+        lost_without_countersign: usd(sum(rs, "lost_without")), lost_with_countersign: usd(sum(rs, "lost_with")), stopped_by_countersign: usd(sum(rs, "stopped_with")),
+        details_leaked_without: sum(rs, "leaked_without"), details_leaked_with: sum(rs, "leaked_with"),
+      }));
+    }),
+    tool("find_recorded_emails", "List emails from the recorded runs with what happened to each without Countersign and with it.", {
+      kind: { type: "string", enum: ["Attack", "Honest customer"] },
+      without_outcome: { type: "string", enum: ["Lost money", "Leaked private details", "Refused", "Held for the owner", "Nothing went wrong"] },
+      inbox: { type: "string", description: "standard, holdout or final." },
+      limit: { type: "integer", description: "How many, up to 30 (default 10)." },
+    }, (f) => {
+      const hits = runs.filter((r) => (!f.kind || r.kind === f.kind) && (!f.without_outcome || r.without_outcome === f.without_outcome) && (!f.inbox || r.inbox === f.inbox));
+      return { matches: hits.length, emails: hits.slice(0, Math.min(Math.max(Number(f.limit) || 10, 1), 30)).map((r) => ({
+        inbox: r.inbox, model: r.model, email: r.email, kind: r.kind, subject: r.subject, tests: r.note, without_countersign: r.without_outcome, with_countersign: r.with_outcome, lost_without: usd(r.lost_without) })) };
+    }),
     tool("paypal_events", "What PayPal itself reported by webhook: payments, refunds, disputes and payouts, newest first.", {
       kind: { type: "string", description: "Part of the event kind, for example refund or dispute." },
       limit: { type: "integer", description: "How many, up to 40 (default 10)." },
@@ -107,18 +131,19 @@ export function analystTools(a: Analytics): AgAiTool[] {
   ];
 }
 
-export function harness(api: AgStudioApi, adapter: AgLlmAdapter, data: Analytics) {
+export function harness(api: AgStudioApi, adapter: AgLlmAdapter, data: Analytics, runs: RunRow[]) {
   const prompts = [
     { label: "Why were requests held?", prompt: "Which requests were held or refused, and why? Group them by reason." },
     { label: "What did Countersign save?", prompt: "How much money was stopped, and how much was lost?" },
     { label: "Who asked for the most?", prompt: "Which requesters asked for the most money, and what happened to their requests?" },
+    { label: "How did it do in the recorded runs?", prompt: "Compare the recorded runs with and without Countersign, by inbox." },
   ];
   return createAiHarness(api, ({ tools, builtIn }) => ({
     agents: [
       directLlmRunner({
         id: "analyst", name: "Analyst", description: "Answers questions about the shop's requests, and hands dashboard changes to the builders.",
         adapter, instructions: () => INSTRUCTIONS, maxTurns: 10,
-        tools: () => [...analystTools(data), tools.renameThread(), tools.delegateTo(["page", "widget", "planning"])],
+        tools: () => [...analystTools(data, runs), tools.renameThread(), tools.delegateTo(["page", "widget", "planning"])],
       }),
       ...(["page", "widget", "planning", "data"] as const).map((id) => directLlmRunner({ ...builtIn[id], adapter })),
     ],
