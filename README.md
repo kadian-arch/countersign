@@ -88,7 +88,7 @@ When PayPal's `paypal-agent-toolkit` is installed (the Dockerfile and CI do it, 
 
 ### Checked against PayPal's SDK model
 
-The refund, order and status handling in `paypal.py` and `guard.py` was checked with the APIMatic Context Plugin against PayPal's Server SDK model, and where it could not be (payouts, disputes, webhooks) that is said plainly. The notes are in [docs/apimatic-context-plugin.md](docs/apimatic-context-plugin.md).
+The refund, order and status handling in `paypal.py` and `guard.py` was checked with the APIMatic Context Plugin against PayPal's Server SDK model, and where it could not be (payouts, disputes, webhooks) that is said plainly. The plugin also supplied the shape of the ledger check: the Setup page can compare every refund Countersign made with what PayPal's Transaction Search shows for the last 30 days, and reports a refund PayPal does not show, or one made in PayPal itself that the ledger never made (`reconcile.py`). It needs Transaction Search switched on for the PayPal app. The notes are in [docs/apimatic-context-plugin.md](docs/apimatic-context-plugin.md).
 
 ### Owner alerts
 

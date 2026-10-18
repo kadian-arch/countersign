@@ -830,6 +830,21 @@ async function paypalPane(pane) {
   else if (c.environment === "simulated") { dot.classList.add("bad"); txt.replaceChildren(el("b", "", "Simulated PayPal"), el("div", "sub", c.note)); }
   else { dot.classList.add("bad"); txt.replaceChildren(el("b", "", "Not connected"), el("div", "sub", c.error || "Check the credentials.")); }
   pane.append(el("p", "note", "To connect your own PayPal account, follow the setup guide in the project's README."));
+  pane.append(el("h3", "t", "Does the ledger match PayPal?"), el("p", "sub", "Compares every refund Countersign made with what PayPal's own transaction search shows for the last 30 days. PayPal can take up to three hours to show a transaction, so newer ones are not judged."));
+  const chk = el("button", "btn", "Check against PayPal"), rep = el("div", "recon"); chk.style.marginTop = "12px"; pane.append(chk, rep);
+  chk.onclick = async () => {
+    chk.disabled = true; rep.replaceChildren(el("p", "sub", "Asking PayPal..."));
+    try {
+      const r = await fetch("/api/reconcile", { headers: owner() }), j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(r.status === 401 ? "This needs the owner token. Enter it under the activity table first." : (j.detail || "The check failed."));
+      if (j.error) { rep.replaceChildren(el("p", "note", j.message)); return; }
+      const f = j.refunds, lines = [el("p", j.ok ? "sub good" : "sub bad", j.ok ? "Everything Countersign refunded is in PayPal, and PayPal shows nothing it did not do." : "The two do not agree.")];
+      lines.push(el("p", "sub", f.matched + " of " + f.ledger + " refunds are in PayPal. " + f.too_recent_to_judge + " are too recent to judge. " + j.payments.seen_in_paypal + " of " + j.payments.shop_payments + " payments are visible in the search window."));
+      f.missing_in_paypal.forEach(m => lines.push(el("p", "note", "Request " + m.request + ": a refund of $" + m.amount + " on " + m.capture + " is in the ledger but not in PayPal.")));
+      f.made_outside_countersign.forEach(m => lines.push(el("p", "note", "PayPal shows a refund of $" + m.amount + " on " + m.capture + " that Countersign did not make (made in PayPal itself).")));
+      rep.replaceChildren(...lines);
+    } catch (e) { rep.replaceChildren(el("p", "note", e.message)); } finally { chk.disabled = false; }
+  };
   const live = S.state && S.state.paypal;
   if (live) {
     pane.append(el("h3", "t", "PayPal webhook"), el("p", "sub", "PayPal tells the shop about payments, refunds, disputes and payouts by sending messages to this address. Each one is checked with PayPal before it is believed."));

@@ -2,6 +2,7 @@
 can run with no network and no credentials. It records what PayPal would have received, which
 makes it an independent record of what really moved. It refuses what PayPal itself refuses
 (a refund above what is left on the payment) and accepts the rest, like the real service."""
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from . import demo_data as demo
@@ -58,6 +59,14 @@ class SimPayPal:
 
     def disputes_for(self, capture_id: str) -> list[dict]:
         return [{"status": "UNDER_PAYPAL_REVIEW"}] if capture_id in self.disputes else []
+
+    def transactions(self, start, end) -> list[dict]:
+        """What a Transaction Search would show: each payment, and each refund as a negative amount that points at its payment."""
+        now = datetime.now(timezone.utc).isoformat()
+        out = [{"id": cid, "ref": c["order"], "amount": c["amount"], "code": "T0006", "status": "S", "date": now} for cid, c in self.captures.items()]
+        out += [{"id": f"REF{i + 1:06d}", "ref": r["capture"], "amount": -r["amount"], "code": "T1107", "status": "S", "date": now}
+                for i, r in enumerate(self.refunds)]
+        return out
 
     def refund(self, capture_id, amount, currency, note, request_id):
         cap = self.captures.get(capture_id)

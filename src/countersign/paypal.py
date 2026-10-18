@@ -100,6 +100,22 @@ class PayPal:
     def payout_batch(self, batch_id: str) -> dict:
         return self.request("GET", f"/v1/payments/payouts/{batch_id}")
 
+    def transactions(self, start, end) -> list[dict]:
+        """What PayPal's Transaction Search shows between two times, as reconcile.normalise reads it. One search takes at most
+        31 days and returns pages, so the range is cut up and every page is followed."""
+        from . import reconcile
+        found = []
+        for a, b in reconcile.windows(start, end):
+            page = 1
+            while True:
+                body = self.request("GET", f"/v1/reporting/transactions?start_date={reconcile.stamp(a)}&end_date={reconcile.stamp(b)}"
+                                           f"&fields=transaction_info&page_size=100&page={page}")
+                found += [t for t in map(reconcile.normalise, body.get("transaction_details", [])) if t]
+                if page >= int(body.get("total_pages") or 1):
+                    break
+                page += 1
+        return found
+
     def disputes_for(self, transaction_id: str) -> list[dict]:
         body = self.request("GET", f"/v1/customer/disputes?disputed_transaction_id={transaction_id}")
         return body.get("items", [])

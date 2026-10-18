@@ -27,7 +27,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request as HttpRequ
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import alerts, studio, tidy, toolkit, webhooks
+from . import alerts, reconcile, studio, tidy, toolkit, webhooks
 from . import demo_data as demo
 from . import emails, mailbox
 from . import profile as profiles
@@ -995,6 +995,16 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
             if "HTTP 429" in str(e):
                 raise HTTPException(429, "The shared AI model is rate limited right now. Wait a minute and ask again.")
             raise HTTPException(503, "the model is not answering right now, try again in a moment")
+
+    @app.get("/api/reconcile")
+    async def reconcile_ledger(ws: Workspace = Depends(shop), x_owner_token: str | None = Header(None)):
+        """Compares the ledger with what PayPal's Transaction Search shows for the last month."""
+        hub.owner_only(x_owner_token, ws.kind)
+        paypal = ws.paypal or ws.sim.paypal
+        with ws.lock:
+            rows = ws.ledger.recent(1000)
+            captures = {o["capture_id"] for o in ws.store.orders() if o["capture_id"]}
+        return await asyncio.to_thread(reconcile.run, paypal, rows, captures)
 
     @app.post("/api/paypal/webhook/register")
     async def register_webhook(x_owner_token: str | None = Header(None)):
