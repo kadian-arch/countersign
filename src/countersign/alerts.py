@@ -66,6 +66,10 @@ def _money(value) -> str:
         return f"${value}"
 
 
+# the colour each kind of message was given, as the brand's own: (accent, text on the accent, the stamp's word)
+_TONES = {"#d99a00": ("#ffc94d", "#14173a", "NEEDS YOU"), "#d93f5c": ("#ff5f84", "#14173a", "ALERT"), "#6a82ff": ("#6a82ff", "#ffffff", "FYI")}
+
+
 def email(shop: str, headline: str, intro: str, facts: list[tuple[str, str]], sections: list[tuple[str, list[str]]],
           button: tuple[str, str] | None, tone: str = "#6a82ff") -> tuple[str, str]:
     """One message, as plain text and as simple HTML. Both say the same thing: what happened, the facts, what it means,
@@ -78,22 +82,32 @@ def email(shop: str, headline: str, intro: str, facts: list[tuple[str, str]], se
     if button:
         lines += ["", f"{button[0]}:", button[1]]
     lines += ["", f"Sent by Countersign for {shop}. You can turn these emails off under Setup, in the Email tab."]
-    rows = "".join(f"<tr><td style='padding:6px 14px 6px 0;color:#6b7280;white-space:nowrap;vertical-align:top'>{e(k)}</td>"
-                   f"<td style='padding:6px 0;color:#111827'>{e(v)}</td></tr>" for k, v in facts)
-    blocks = "".join(f"<p style='margin:18px 0 6px;font-weight:600;color:#111827'>{e(t)}</p>"
-                     f"<ul style='margin:0;padding-left:20px;color:#374151'>{''.join(f'<li style=margin:3px 0>{e(i)}</li>' for i in items)}</ul>"
+    colour, ink, stamp = _TONES.get(tone, (tone, "#ffffff", "FYI"))
+    mono = "'IBM Plex Mono',Consolas,Menlo,monospace"
+    rows = "".join(f"<tr><td style='padding:9px 16px 9px 0;border-top:1px solid #1f2550;color:#6770a0;font:11px {mono};letter-spacing:.08em;"
+                   f"text-transform:uppercase;white-space:nowrap;vertical-align:top'>{e(k)}</td>"
+                   f"<td style='padding:9px 0;border-top:1px solid #1f2550;color:#f0f2ff;font-size:15px'>{e(v)}</td></tr>" for k, v in facts)
+    blocks = "".join(f"<p style='margin:22px 0 8px;color:{colour};font:12px {mono};letter-spacing:.1em;text-transform:uppercase'>{e(t)}</p>"
+                     f"<ul style='margin:0;padding-left:20px;color:#c9cffa'>{''.join(f'<li style=margin:4px 0>{e(i)}</li>' for i in items)}</ul>"
                      for t, items in sections)
-    cta = (f"<p style='margin:24px 0 0'><a href='{e(button[1])}' style='display:inline-block;background:{tone};color:#ffffff;"
-           f"text-decoration:none;font-weight:600;padding:12px 20px;border-radius:10px'>{e(button[0])}</a></p>") if button else ""
-    page_html = (f"<div style='font:15px/1.55 -apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f3f4f8;padding:22px 12px'>"
-                 f"<div style='max-width:560px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e7eb'>"
-                 f"<div style='height:5px;background:{tone}'></div><div style='padding:22px 24px'>"
-                 f"<p style='margin:0;color:#6b7280;font-size:13px'>{e(shop)}</p>"
-                 f"<h1 style='margin:4px 0 10px;font-size:20px;color:#111827'>{e(headline)}</h1>"
-                 f"<p style='margin:0 0 14px;color:#374151'>{e(intro)}</p>"
-                 f"<table style='border-collapse:collapse;font-size:15px'>{rows}</table>{blocks}{cta}"
-                 f"<p style='margin:26px 0 0;color:#9ca3af;font-size:12px'>Sent by Countersign for {e(shop)}. "
-                 f"You can turn these emails off under Setup, in the Email tab.</p></div></div></div>")
+    cta = (f"<p style='margin:28px 0 0'><a href='{e(button[1])}' style='display:inline-block;background:{colour};color:{ink};"
+           f"text-decoration:none;font-weight:700;padding:13px 22px;border-radius:11px'>{e(button[0])}</a></p>") if button else ""
+    mark = ("<td style='width:38px;vertical-align:middle'><div style='width:32px;height:32px;line-height:32px;border:2.5px solid #6a82ff;"
+            "border-radius:50%;text-align:center;color:#2fd9ff;font-weight:800;font-size:17px'>&#10003;</div></td>")
+    page_html = (f"<div style=\"background:#04050d;padding:26px 12px;font:15px/1.55 -apple-system,'Segoe UI',Roboto,Arial,sans-serif\">"
+                 f"<div style='max-width:580px;margin:0 auto;background:#0d1130;border:1px solid #2a3170;border-radius:18px;overflow:hidden'>"
+                 f"<div style='height:4px;background:{colour}'></div><div style='padding:24px 26px 26px'>"
+                 f"<table style='width:100%;border-collapse:collapse'><tr>{mark}"
+                 f"<td style='vertical-align:middle;color:#f0f2ff;font-weight:700;font-size:18px;letter-spacing:-.01em'>Countersign</td>"
+                 f"<td style='text-align:right;vertical-align:middle'><span style='display:inline-block;border:1.5px solid {colour};color:{colour};"
+                 f"border-radius:7px;padding:3px 9px;font:700 11px {mono};letter-spacing:.14em'>{stamp}</span></td></tr></table>"
+                 f"<p style='margin:20px 0 0;color:#6770a0;font-size:13px'>{e(shop)}</p>"
+                 f"<h1 style='margin:2px 0 10px;font-size:23px;line-height:1.2;color:#f0f2ff;letter-spacing:-.02em'>{e(headline)}</h1>"
+                 f"<p style='margin:0 0 18px;color:#a3acd6'>{e(intro)}</p>"
+                 f"<table style='width:100%;border-collapse:collapse'>{rows}</table>{blocks}{cta}"
+                 f"<p style='margin:30px 0 0;padding-top:14px;border-top:1px solid #1f2550;color:#6770a0;font-size:12px'>Sent by Countersign for {e(shop)}, "
+                 f"the guard between an AI agent and your PayPal account. You can turn these emails off under Setup, in the Email tab.</p>"
+                 f"</div></div></div>")
     return "\n".join(lines) + "\n", page_html
 
 
@@ -174,17 +188,30 @@ def compose_notice(shop: str, summary: str, info: dict, url: str, day: dict | No
     return f"{title}{amount}{order}", text, page_html
 
 
-_STYLE = ("body{font:16px/1.5 system-ui,sans-serif;background:#0b0e1f;color:#e8ebff;margin:0;padding:28px 16px}"
-          "main{max-width:560px;margin:0 auto;background:#141935;border:1px solid #2b3260;border-radius:16px;padding:26px}"
-          "h1{font-size:22px;margin:0 0 4px}p{color:#aab1d8}.k{color:#8f98c9;font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin-top:18px}"
-          ".v{font-size:18px}ul{padding-left:20px;color:#e8ebff}form{display:inline}"
-          "button{font:600 16px system-ui;border:0;border-radius:11px;padding:12px 20px;margin:22px 10px 0 0;cursor:pointer}"
-          ".yes{background:#34d399;color:#04140d}.no{background:#2b3260;color:#e8ebff}.note{color:#8f98c9;font-size:14px}")
+_STYLE = ("body{font:16px/1.55 'Figtree',system-ui,sans-serif;background:radial-gradient(ellipse at 50% -10%,#18205a 0,#04050d 60%) fixed;background-color:#04050d;"
+          "color:#f0f2ff;margin:0;padding:28px 16px}"
+          "main{max-width:580px;margin:0 auto;background:rgba(16,20,50,.78);border:1px solid #2a3170;border-radius:20px;padding:26px 26px 22px;"
+          "box-shadow:0 24px 70px -24px rgba(0,0,0,.7)}"
+          ".brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;font:700 19px 'Bricolage Grotesque',system-ui,sans-serif;letter-spacing:-.01em}"
+          ".brand svg{width:34px;height:34px}"
+          "h1{font:700 24px/1.15 'Bricolage Grotesque',system-ui,sans-serif;letter-spacing:-.02em;margin:0 0 6px}p{color:#a3acd6}"
+          ".k{color:#6770a0;font:11px 'IBM Plex Mono',Consolas,monospace;text-transform:uppercase;letter-spacing:.1em;margin-top:20px}"
+          ".v{font-size:18px}ul{padding-left:20px;color:#c9cffa}form{display:inline}"
+          "button{font:700 16px 'Figtree',system-ui,sans-serif;border:0;border-radius:11px;padding:13px 22px;margin:24px 10px 0 0;cursor:pointer}"
+          ".yes{background:#3df5c4;color:#04140d}.no{background:#2a3170;color:#f0f2ff}.note{color:#6770a0;font-size:14px}")
+
+_MARK = ("<svg viewBox='0 0 40 40' aria-hidden=true><defs><linearGradient id=g x1=0 y1=0 x2=1 y2=1><stop offset=0 stop-color='#2fd9ff'/>"
+         "<stop offset=.5 stop-color='#6a82ff'/><stop offset=1 stop-color='#c866ff'/></linearGradient></defs>"
+         "<circle cx=20 cy=20 r=14.5 fill=none stroke='url(#g)' stroke-width=2.6 />"
+         "<path d='M12.6 20.9 L17.7 25.6 L27.6 14.2' fill=none stroke='url(#g)' stroke-width=3.2 stroke-linecap=round stroke-linejoin=round /></svg>")
 
 
 def page(title: str, body: str) -> str:
     return (f"<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<meta name=robots content=noindex><title>{html.escape(title)}</title><style>{_STYLE}</style><main>{body}</main></html>")
+            f"<meta name=robots content=noindex><title>{html.escape(title)}</title>"
+            f"<link rel=icon href=/brand/favicon.svg type=image/svg+xml>"
+            f"<link href='https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700&family=Figtree:wght@400;700&family=IBM+Plex+Mono&display=swap' rel=stylesheet>"
+            f"<style>{_STYLE}</style><main><div class=brand>{_MARK}Countersign</div>{body}</main></html>")
 
 
 def review_page(row: dict, store, shop: str, action_id: int, sig: str) -> str:
