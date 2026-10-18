@@ -224,3 +224,57 @@ class VerifyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RegisterTests(unittest.TestCase):
+    class Fake:
+        def __init__(self, existing=()):
+            self.existing, self.sent = list(existing), []
+
+        def request(self, method, path, body=None):
+            if method == "GET":
+                return {"webhooks": self.existing}
+            self.sent.append(body)
+            return {"id": "WH-NEW"}
+
+    def test_a_new_address_is_registered_for_every_event_the_shop_handles(self):
+        from countersign.webhooks import EVENT_TYPES, register
+        fake = self.Fake()
+        self.assertEqual(register(fake, "https://shop.example/api/paypal/webhook"), ("WH-NEW", True))
+        self.assertEqual([e["name"] for e in fake.sent[0]["event_types"]], EVENT_TYPES)
+
+    def test_an_address_that_is_already_registered_is_found_not_registered_twice(self):
+        from countersign.webhooks import register
+        fake = self.Fake([{"id": "WH-1", "url": "https://shop.example/api/paypal/webhook"}])
+        self.assertEqual(register(fake, "https://shop.example/api/paypal/webhook"), ("WH-1", False))
+        self.assertEqual(fake.sent, [])
+
+    def test_only_an_https_address_is_accepted(self):
+        from countersign.webhooks import register
+        with self.assertRaises(ValueError):
+            register(self.Fake(), "http://shop.example/api/paypal/webhook")
+
+
+class RegisterRouteTests(Base):
+    def test_registering_needs_the_owner_token(self):
+        self.hub.webhook_id = ""
+        self.assertEqual(self.c.post("/api/paypal/webhook/register").status_code, 401)
+        self.assertEqual(self.hub.webhook_id, "")
+
+    def test_a_server_with_no_https_address_says_why_instead_of_registering(self):
+        r = self.c.post("/api/paypal/webhook/register", headers=OWNER)   # the test server's address is http://127.0.0.1
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("https", r.json()["detail"])
+
+    def test_the_owner_registers_it_and_the_id_is_kept_for_next_time(self):
+        self.hub.webhook_id = ""
+        self.hub.public_url = "https://shop.example"
+        with mock.patch("countersign.webhooks.register", return_value=("WH-9", True)) as reg:
+            r = self.c.post("/api/paypal/webhook/register", headers=OWNER)
+        self.assertEqual((r.status_code, r.json()["id"]), (200, "WH-9"))
+        reg.assert_called_once()
+        self.assertEqual(reg.call_args[0][1], "https://shop.example/api/paypal/webhook")
+        self.assertEqual(self.hub.webhook_id, "WH-9")
+        self.assertEqual(self.ws.store.get_setting("webhook_id"), "WH-9")
+        paypal = self.c.get("/api/state").json()["paypal"]
+        self.assertEqual((paypal["webhook"], paypal["webhook_url"]), (True, "https://shop.example/api/paypal/webhook"))

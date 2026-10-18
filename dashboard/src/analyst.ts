@@ -1,5 +1,6 @@
 import { createAiHarness, directLlmRunner } from "ag-studio";
 import type { AgAiTool, AgAiToolContext, AgAiToolInvocation, AgLlmAdapter, AgStudioApi } from "ag-studio";
+import { withChecker } from "./checker";
 import type { Analytics, RunRow } from "./data";
 
 // Studio's own agents write structured queries against a large schema. That works with the biggest paid models and
@@ -140,11 +141,11 @@ export function harness(api: AgStudioApi, adapter: AgLlmAdapter, data: Analytics
   ];
   return createAiHarness(api, ({ tools, builtIn }) => ({
     agents: [
-      directLlmRunner({
-        id: "analyst", name: "Analyst", description: "Answers questions about the shop's requests, and hands dashboard changes to the builders.",
+      withChecker(directLlmRunner({
+        id: "analyst", name: "Analyst", description: "Answers questions about the shop's requests, and hands dashboard changes to the builders. A checker looks every figure up before the answer is trusted.",
         adapter, instructions: () => INSTRUCTIONS, maxTurns: 10,
         tools: () => [...analystTools(data, runs), tools.renameThread(), tools.delegateTo(["page", "widget", "planning"])],
-      }),
+      }), adapter, data, runs),
       ...(["page", "widget", "planning", "data"] as const).map((id) => directLlmRunner({ ...builtIn[id], adapter })),
     ],
     primary: "analyst",

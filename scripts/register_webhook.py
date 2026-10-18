@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from countersign.config import load_env, need
 from countersign.paypal import PayPal, PayPalError
-from countersign.webhooks import EVENT_TYPES
+from countersign.webhooks import register
 
 load_env()
 paypal = PayPal(need("PAYPAL_CLIENT_ID"), need("PAYPAL_CLIENT_SECRET"))
@@ -24,15 +24,9 @@ if "--list" in sys.argv:
     sys.exit(0 if existing else "no webhooks registered for this app")
 
 base = need("PUBLIC_URL").rstrip("/")
-if not base.startswith("https://"):
-    sys.exit("PUBLIC_URL has to be the https address the server is reached at, PayPal does not send to anything else")
 url = base + "/api/paypal/webhook"
-for w in existing:
-    if w["url"] == url:
-        print(f"already registered: {w['id']}\nset PAYPAL_WEBHOOK_ID={w['id']} in the server's settings")
-        sys.exit(0)
 try:
-    made = paypal.request("POST", "/v1/notifications/webhooks", {"url": url, "event_types": [{"name": n} for n in EVENT_TYPES]})
-except PayPalError as e:
-    sys.exit(f"PayPal did not accept it: {e}")
-print(f"registered {url}\nset PAYPAL_WEBHOOK_ID={made['id']} in the server's settings")
+    found, created = register(paypal, url)
+except (ValueError, PayPalError) as e:
+    sys.exit(f"could not register: {e}")
+print(("registered " + url if created else "already registered") + f"\nwebhook id {found}, the server also finds it by itself once it is registered from the Setup page")

@@ -659,7 +659,8 @@ class Workspace:
                    "mailbox": ({**self.hub.mailer.public(), "alerts": self.profile.alerts and bool(self.hub.owner_token)}
                                if self.kind == "live" and self.hub.mailer else None),
                    "cast": self.cast(), "revealed": reveal,
-                   "paypal": ({"webhook": bool(self.hub.webhook_id), "events": self.store.events(12)} if self.kind == "live" else None),
+                   "paypal": ({"webhook": bool(self.hub.webhook_id), "webhook_url": self.hub.public_url + "/api/paypal/webhook",
+                              "events": self.store.events(12)} if self.kind == "live" else None),
                    "catalog": [{"key": k, "name": n, "price": str(p)} for k, (n, p) in demo.PRODUCTS.items()]}
             if self._private(reveal):
                 out["inbox"] = [{**i, "sender": mask(i["sender"])} for i in out["inbox"]]
@@ -700,6 +701,8 @@ class Hub:
         self.shop_tag = re.sub(r"[^A-Za-z0-9]", "", tag)[:24]
         self.webhook_wait = 1.5   # seconds to let our own ledger catch up before calling a refund someone else's
         self.live = Workspace(self, "live") if mode in ("live", "both") else None
+        if self.live is not None and not self.webhook_id:   # one registered from the Setup page is remembered
+            self.webhook_id = self.live.store.get_setting("webhook_id", "") or ""
 
     def allow_email(self):
         """Keeps the shared model keys from being used up: a limited number of emails an hour across everyone."""
@@ -992,6 +995,25 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
             if "HTTP 429" in str(e):
                 raise HTTPException(429, "The shared AI model is rate limited right now. Wait a minute and ask again.")
             raise HTTPException(503, "the model is not answering right now, try again in a moment")
+
+    @app.post("/api/paypal/webhook/register")
+    async def register_webhook(x_owner_token: str | None = Header(None)):
+        """Tells PayPal where to send this shop's events, from the Setup page instead of a script."""
+        ws = hub.live
+        if ws is None:
+            raise HTTPException(404, "there is no PayPal shop on this server")
+        hub.owner_only(x_owner_token, "live")
+        paypal = ws.paypal or ws.sim.paypal
+        url = hub.public_url + "/api/paypal/webhook"
+        try:
+            found, created = await asyncio.to_thread(webhooks.register, paypal, url)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:
+            raise HTTPException(502, f"PayPal did not accept it: {e}")
+        ws.store.set_setting("webhook_id", found)
+        hub.webhook_id = found
+        return {"id": found, "url": url, "created": created}
 
     @app.post("/api/paypal/webhook")
     async def paypal_webhook(request: HttpRequest):

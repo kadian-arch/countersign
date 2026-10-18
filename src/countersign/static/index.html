@@ -830,6 +830,24 @@ async function paypalPane(pane) {
   else if (c.environment === "simulated") { dot.classList.add("bad"); txt.replaceChildren(el("b", "", "Simulated PayPal"), el("div", "sub", c.note)); }
   else { dot.classList.add("bad"); txt.replaceChildren(el("b", "", "Not connected"), el("div", "sub", c.error || "Check the credentials.")); }
   pane.append(el("p", "note", "To connect your own PayPal account, follow the setup guide in the project's README."));
+  const live = S.state && S.state.paypal;
+  if (live) {
+    pane.append(el("h3", "t", "PayPal webhook"), el("p", "sub", "PayPal tells the shop about payments, refunds, disputes and payouts by sending messages to this address. Each one is checked with PayPal before it is believed."));
+    const wh = el("div", "conn"), wdot = el("i", "dotbig " + (live.webhook ? "ok" : "bad")), wtxt = el("div"); wh.append(wdot, wtxt); pane.append(wh);
+    wtxt.append(el("b", "", live.webhook ? "Registered" : "Not registered yet"), el("div", "sub mono", live.webhook_url));
+    if (!live.webhook) {
+      const go = el("button", "btn primary", "Register the webhook"); go.style.marginTop = "12px"; pane.append(go);
+      go.onclick = async () => {
+        go.disabled = true;
+        try {
+          const r = await fetch("/api/paypal/webhook/register", { method: "POST", headers: owner() });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(r.status === 401 ? "This needs the owner token. Enter it under the activity table first." : (j.detail || "PayPal did not accept it."));
+          toast(j.created ? "Webhook registered." : "That address was already registered, now it is in use.", "good"); await refresh(); renderSetup();
+        } catch (e) { toast(e.message, "bad"); go.disabled = false; }
+      };
+    }
+  }
 }
 function rulesPane(pane) {
   const p = S.settings; if (!p) { pane.append(el("div", "empty", "Loading...")); return; }

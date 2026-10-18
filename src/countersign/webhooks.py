@@ -25,6 +25,18 @@ EVENT_TYPES = [
     "PAYMENT.PAYOUTS-ITEM.RETURNED", "PAYMENT.PAYOUTS-ITEM.BLOCKED", "PAYMENT.PAYOUTS-ITEM.HELD",
     "PAYMENT.PAYOUTS-ITEM.UNCLAIMED",
 ]
+
+
+def register(paypal, url: str) -> tuple[str, bool]:
+    """Makes sure PayPal sends the shop's events to url. Returns the webhook's id and whether it had to be created.
+    PayPal only sends to an https address, and keeps one webhook per address, so asking twice is harmless."""
+    if not url.startswith("https://"):
+        raise ValueError("the server's public address has to be https, PayPal does not send to anything else")
+    for w in paypal.request("GET", "/v1/notifications/webhooks").get("webhooks", []):
+        if w["url"] == url:
+            return w["id"], False
+    made = paypal.request("POST", "/v1/notifications/webhooks", {"url": url, "event_types": [{"name": n} for n in EVENT_TYPES]})
+    return made["id"], True
 PAYOUT_LOST = {"DENIED", "FAILED", "RETURNED", "BLOCKED"}   # the money is not going to arrive
 PAYOUT_TROUBLE = PAYOUT_LOST | {"HELD", "UNCLAIMED"}
 MAX_ORDERS = 300   # learned orders stop here, a shop's page is not a place for thousands
