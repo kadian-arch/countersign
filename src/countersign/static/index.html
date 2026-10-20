@@ -100,7 +100,8 @@ nav .links a:hover, nav .links a.on { color: var(--ink); background: var(--glass
 .btn.ok { border-color: color-mix(in srgb, var(--allow) 55%, transparent); color: var(--allow); }
 .btn.no { border-color: color-mix(in srgb, var(--refuse) 50%, transparent); color: var(--refuse); }
 .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
-.btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .tabs button:focus-visible { outline: 2px solid var(--a3); outline-offset: 2px; }
+.btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .tabs button:focus-visible, a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--a3); outline-offset: 2px; }
+.pane > h3.t:not(:first-child) { margin-top: 30px; }   /* a second heading in a setup tab needs air above it */
 select, input, textarea { width: 100%; font: 500 15px var(--body); color: var(--ink); background: rgba(4, 6, 22, .5); border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; transition: border-color .15s, box-shadow .15s; }
 :root[data-theme="light"] select, :root[data-theme="light"] input, :root[data-theme="light"] textarea { background: rgba(255, 255, 255, .85); }
 select:hover, input:hover, textarea:hover { border-color: var(--line2); }

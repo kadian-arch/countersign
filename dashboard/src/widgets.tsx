@@ -9,22 +9,30 @@ const colours: Record<string, string> = {
   "Lost money": palette.refuse, "Leaked private details": palette.a4, "Held for the owner": palette.hold, "Nothing went wrong": palette.allow,
 };
 
-function Ribbon({ widgetApi, dataMapping }: AgWidgetParams<any>) {
+function Ribbon(props: AgWidgetParams<any>) {
+  const { widgetApi, dataMapping } = props;
   const [rows, setRows] = useState<{ name: string; value: number }[]>([]);
   const category = dataMapping.category?.[0];
   const value = dataMapping.value?.[0];
 
   useEffect(() => {
     if (!category || !value) { widgetApi.setDisplayState("incompleteDataMapping"); return; }
-    let live = true;
-    widgetApi.getData({ fields: [category, value] }).then((res: any) => {
+    let live = true, last = "";
+    const load = () => widgetApi.getData({ fields: [category, value] }, { crossFilter: "filter" }).then((res: any) => {
       if (!live) return;
       const out = (res.results.rows as Record<string, any>[]).map((r) => ({ name: String(r[category.key]), value: Number(r[value.key]) || 0 }))
         .filter((r) => r.value > 0);
+      const now = JSON.stringify(out);
+      if (now === last) return;
+      last = now;
       setRows(out);
       widgetApi.setDisplayState(out.length ? "displayed" : "noData");
-    });
-    return () => { live = false; };
+    }).catch(() => undefined);
+    load();
+    // Studio does not tell a custom widget when a filter or a search narrows the page, so the bar asks again once a second and only
+    // redraws when the numbers changed. The data is in the browser, so it costs nothing.
+    const timer = setInterval(load, 1000);
+    return () => { live = false; clearInterval(timer); };
   }, [widgetApi, category, value, dataMapping]);
 
   const total = rows.reduce((n, r) => n + r.value, 0) || 1;

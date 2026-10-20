@@ -9,6 +9,7 @@
 - Every response carries protective headers (no framing, no content sniffing, a stricter referrer policy), the review page is never cached, and the page is sent compressed.
 - Text contrast raised to the accessible level in both themes, a clear keyboard focus outline, a proper page title and canonical address, and sections on screen can no longer stay hidden if the browser is late reporting them.
 - An address in a PayPal message keeps its @ sign.
+- The dashboard's verdict bar follows the search box and the filter buttons (Studio does not tell a custom widget when the page is filtered, so it re-reads its data every second), and the rules chart says it covers all requests.
 
 - Fixed: the ledger check sent its dates with a bare "+", which a web address reads as a space, so PayPal refused the search with a 400. The dates are now encoded, and when PayPal refuses for another reason its own words are shown.
 - The dashboard has a search box (a custom widget) on both pages, and the filter buttons have room to show their choices.
