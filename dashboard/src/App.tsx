@@ -15,7 +15,7 @@ import { widgets } from "./widgets";
 const PANELS = {
   phone: { edit: { left: [], right: [] }, view: { left: [], right: [] } },
   tablet: { edit: { left: [], right: [] }, view: { left: [], right: [] } },
-  desktop: { edit: { left: ["ai"], right: ["edit", "data"] }, view: { right: ["filters"] } },
+  desktop: { edit: { left: ["ai"], right: ["edit", "data"] }, view: { left: [], right: [] } },   // the page has its own filter buttons
 } as const;
 const BUILDER_MIN_WIDTH = 1100;
 

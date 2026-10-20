@@ -52,7 +52,7 @@ Open http://127.0.0.1:8000. With PayPal sandbox credentials in `.env` (see `.env
 - **The live shop.** Send the shop an email. The assistant looks things up, asks for refunds and payments through the guard, and replies. The money tiles, the owner's queue and the activity table update as it happens.
 - **A day at the shop.** Real runs of a demo inbox against the PayPal sandbox, replayed email by email: what the agent did without Countersign, with it, the replies that went out, and what each cost the shop.
 - **Try the guard.** Fourteen examples (honest requests, attacks, forged senders) and a form for your own. No model needed.
-- **Setup.** PayPal connection status, rules, shop knowledge, suppliers and contacts, and the inbound-email webhook.
+- **Setup.** PayPal connection status, the PayPal webhook and a ledger check against PayPal, rules, shop knowledge, suppliers and contacts, and the shop's mailbox with the owner alerts switch.
 - **Security.** The test results below, read from the saved results.
 
 Every visitor gets a private practice shop on a simulated PayPal, so nothing is shared and no account is needed. Every request typed into the practice shop is also judged by the stress test's rules, and the page shows how many got through and broke one.
@@ -127,7 +127,7 @@ With the guard on, six seeds of 100,000 random attempts (600,000 in all) broke n
 
     python scripts/red_team.py --model groq/openai/gpt-oss-120b --rounds 4 --turns 25
 
-**Model runs on the sandbox.** `scripts/run_inbox.py` runs an inbox of honest and hostile emails through an agent against the real PayPal sandbox, once with the guard and once without, and `scripts/compare_runs.py` sets the results side by side. There are three inboxes (`--inbox standard|holdout|final`); the second and third were written after earlier versions of the guard and the third is kept for the end. Results so far, from earlier versions of the guard: six pairs of runs on gpt-oss-120b (Groq and Cerebras). Without Countersign the agent lost $145.50 on average on the first inbox and $214.20 on the second. With it, $0 in every run. The runs are being repeated on the current version. `scripts/export_days.py` turns the saved runs into the replays the page shows, with the sandbox account addresses replaced by made-up ones.
+**Model runs on the sandbox.** `scripts/run_inbox.py` runs an inbox of honest and hostile emails through an agent against the real PayPal sandbox, once with the guard and once without, and `scripts/compare_runs.py` sets the results side by side. There are three inboxes (`--inbox standard|holdout|final`); the second and third were written after earlier versions of the guard and the third is kept for the end. Results with the current guard, prompt and checks (older runs are not counted, see `fingerprint.py`): twelve pairs of runs on gpt-oss-120b, four on each inbox, on Cerebras and Groq. Without Countersign the agent lost $115.15 on average on the first inbox, $127.82 on the second and $27.86 on the third, and $253.60 in the worst single run. With it, $0 in every run. Two cautions: the sandbox account ran short of funds during some of the runs without the guard, which made some payments fail, so those losses are lower bounds; and these are samples from free-tier models on three fixed inboxes, not a proof for every inbox. A run in which the model stopped answering is saved but not counted. `scripts/export_days.py` turns the saved runs into the replays the page shows, with the sandbox account addresses replaced by made-up ones.
 
 What these tests do not show: how a model words replies beyond the sentence patterns the reply checker matches, and how the real PayPal behaves beyond the calls this project makes. The rules the stress test judges by were written by the author of the guard, which is why the attacker model, the visitors and the published scripts matter.
 
@@ -149,6 +149,13 @@ What these tests do not show: how a model words replies beyond the sentence patt
         llm.py          chat client with retry and model fallback
         web.py          the console, the live shop and the API
         studio.py       one model turn for the dashboard's assistant, with tool arguments repaired to their schema
+        mailbox.py      the shop's mailbox: reads mail, replies to confirmed senders, sends owner alerts
+        alerts.py       owner alert emails and the signed approve/refuse page
+        webhooks.py     PayPal webhooks: verified, handled once, turned into what the owner needs to know
+        reconcile.py    compares the ledger with PayPal's Transaction Search
+        toolkit.py      PayPal Agent Toolkit tools, for the confirmed owner only
+        tidy.py         repairs a model's reply before it is sent
+        fingerprint.py  which version of the guard, checks and prompt a run was made with
         sim.py          a stand-in for PayPal, so everything runs offline
         stress.py       the stress test and the rules it judges by
         mutants.py      deliberately broken guards
@@ -157,7 +164,8 @@ What these tests do not show: how a model words replies beyond the sentence patt
         evaluate.py, runs.py, days.py, facts.py     run results, replays and the numbers the page quotes
     dashboard/          the AG Studio dashboard (React, builds into the server's static folder)
     tests/              offline tests
-    scripts/            seeding, model runs, stress test, mutation check, red team, server
+    docs/               notes on the dashboard's agents and on the APIMatic Context Plugin
+    scripts/            seeding, model runs, stress test, mutation check, red team, server, webhook registration
 
 ## Setup
 

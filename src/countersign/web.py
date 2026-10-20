@@ -54,6 +54,8 @@ MAX_EMAILS = 25          # per shop
 MAX_AGENTS = 3           # emails being handled by a model at once, across all visitors
 MAX_EMAILS_PER_HOUR = 60 # across all visitors, so shared model keys last
 RESEED_SECONDS = 300     # how often the shared sandbox shop may be given fresh orders
+AUTO_RESEED_SECONDS = 6 * 3600   # how often it may do that to itself, when it is full
+MAX_PENDING = 60         # held requests waiting for the owner, which any stranger can add to
 BRAND = {"favicon.svg": "image/svg+xml", "favicon.ico": "image/x-icon", "apple-touch-icon.png": "image/png", "og.png": "image/png"}
 MAX_ORDERS = 80          # a shop's orders stop growing here
 MAX_ORDERS_PER_EMAIL = 3
@@ -269,6 +271,8 @@ class Workspace:
         if body.product not in demo.PRODUCTS:
             raise HTTPException(422, "choose one of the products listed")
         self.hub.allow_order()
+        if len(self.store.orders()) >= MAX_ORDERS and self._refresh_if_full():
+            raise HTTPException(503, "the shop is being given fresh orders, try again in a minute")
         items = [(body.product, body.quantity)]
         total = demo.order_total(items)
         paypal = self.paypal or self.sim.paypal
@@ -295,6 +299,21 @@ class Workspace:
             self.bump()
         return {"order_no": order_no, "total": str(total), "email": email, "product": demo.PRODUCTS[body.product][0],
                 "quantity": body.quantity, "paypal_order": res["id"]}
+
+    def _refresh_if_full(self) -> bool:
+        """The shared shop, left alone for days, fills up with visitors' orders and held requests until nobody can try it.
+        When it is full it sets itself up again, at most once every six hours, so it keeps working with no one watching.
+        Returns whether it started."""
+        if self.kind != "live" or self.hub.live is not self:
+            return False
+        with self.lock:
+            if self.resetting or time.time() - self.last_reseed < AUTO_RESEED_SECONDS:
+                return False
+            self.resetting = True
+            self.bump()
+        print("countersign: the shared shop was full, setting it up again by itself", flush=True)
+        threading.Thread(target=self._reseed, daemon=True).start()
+        return True
 
     def start_reseed(self) -> dict:
         """The shared PayPal sandbox shop gets fresh paid orders, in the background, no more than once in a while."""
@@ -325,6 +344,8 @@ class Workspace:
         """Through the runtime for real: recorded, and run if allowed. In the live shop it reaches PayPal."""
         if self.resetting:
             raise HTTPException(409, "the shop is being set up again, try again in a moment")
+        if self.kind == "live" and len(self.ledger.pending()) >= MAX_PENDING and self._refresh_if_full():
+            raise HTTPException(503, "the shop is being given fresh orders, try again in a minute")
         with self.lock:
             if self.kind == "sim" and len(self.ledger.recent(MAX_ACTIONS + 1)) > MAX_ACTIONS:
                 self.reset()
