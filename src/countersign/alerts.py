@@ -198,7 +198,8 @@ _STYLE = ("body{font:16px/1.55 'Figtree',system-ui,sans-serif;background:radial-
           ".k{color:#6770a0;font:11px 'IBM Plex Mono',Consolas,monospace;text-transform:uppercase;letter-spacing:.1em;margin-top:20px}"
           ".v{font-size:18px}ul{padding-left:20px;color:#c9cffa}form{display:inline}"
           "button{font:700 16px 'Figtree',system-ui,sans-serif;border:0;border-radius:11px;padding:13px 22px;margin:24px 10px 0 0;cursor:pointer}"
-          ".yes{background:#3df5c4;color:#04140d}.no{background:#2a3170;color:#f0f2ff}.note{color:#6770a0;font-size:14px}")
+          ".yes{background:#3df5c4;color:#04140d}.no{background:#2a3170;color:#f0f2ff}.note{color:#6770a0;font-size:14px}"
+          ".warn{margin-top:22px;padding:11px 14px;border:1px solid #ffc94d66;background:#ffc94d14;border-radius:11px;color:#ffe3a1;font-size:15px}")
 
 _MARK = ("<svg viewBox='0 0 40 40' aria-hidden=true><defs><linearGradient id=g x1=0 y1=0 x2=1 y2=1><stop offset=0 stop-color='#2fd9ff'/>"
          "<stop offset=.5 stop-color='#6a82ff'/><stop offset=1 stop-color='#c866ff'/></linearGradient></defs>"
@@ -224,5 +225,6 @@ def review_page(row: dict, store, shop: str, action_id: int, sig: str) -> str:
         f"<div class=k>What</div><div class=v>{html.escape(describe(row, store))}</div>"
         f"<div class=k>Asked by</div><div class=v>{html.escape(who(row))}</div>"
         f"<div class=k>Why it was held</div><ul>{reasons}</ul>"
+        f"<p class=warn>If you approve, the money is sent even though the guard flagged this request. Only approve it if you know it is genuine.</p>"
         f"{form('approve', 'Approve', 'yes')}{form('reject', 'Refuse', 'no')}"
-        f"<p class=note>Approving runs the checks again before anything is sent.</p>"))
+        f"<p class=note>Approving runs the checks again before anything is sent. Refusing sends nothing.</p>"))

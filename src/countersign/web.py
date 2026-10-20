@@ -25,6 +25,8 @@ from urllib.parse import parse_qs, urlparse
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request as HttpRequest, Response
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
+from starlette.datastructures import MutableHeaders
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from . import alerts, reconcile, studio, tidy, toolkit, webhooks
@@ -34,7 +36,7 @@ from . import profile as profiles
 from .agent import Agent
 from .channel import FAILING, PASSING, authenticated, route
 from .days import list_days, run_rows
-from .evaluate import report
+from .evaluate import loss_if_executed, report
 from .guard import Guard, Request, Verdict
 from .inbox import Email
 from .ledger import Ledger
@@ -55,6 +57,7 @@ MAX_AGENTS = 3           # emails being handled by a model at once, across all v
 MAX_EMAILS_PER_HOUR = 60 # across all visitors, so shared model keys last
 RESEED_SECONDS = 300     # how often the shared sandbox shop may be given fresh orders
 AUTO_RESEED_SECONDS = 6 * 3600   # how often it may do that to itself, when it is full
+EXHAUSTED_RESEED_SECONDS = 1800  # and when the page's examples have run out of orders or invoices to use
 MAX_PENDING = 60         # held requests waiting for the owner, which any stranger can add to
 BRAND = {"favicon.svg": "image/svg+xml", "favicon.ico": "image/x-icon", "apple-touch-icon.png": "image/png", "og.png": "image/png"}
 MAX_ORDERS = 80          # a shop's orders stop growing here
@@ -70,6 +73,60 @@ def mask(address: str | None) -> str | None:
         return address
     local, _, domain = address.partition("@")
     return f"{local[:1]}***@{domain}"
+
+
+_ADDRESS_IN_TEXT = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+
+def _made_up(address: str) -> bool:
+    """The demo's own addresses all sit on a domain with "example" in it (example.com, eastgate.example, ...)."""
+    return "example" in address.rsplit("@", 1)[-1].lower().split(".")
+
+
+def scrub(value, keep: set[str]):
+    """Hides every real-looking address in whatever is about to be shown to the public, wherever it turns up: in a reason the guard
+    gave, a payee, an email body, a record of a rule being broken. mask() only covered the fields that were known to hold an address.
+    Kept as they are: the shop's own addresses (keep) and the made-up ones the demo is made of."""
+    if isinstance(value, str):
+        return _ADDRESS_IN_TEXT.sub(lambda m: m.group(0) if m.group(0).lower() in keep or _made_up(m.group(0)) else mask(m.group(0)), value)
+    if isinstance(value, list):
+        return [scrub(v, keep) for v in value]
+    if isinstance(value, dict):
+        return {k: scrub(v, keep) for k, v in value.items()}
+    return value
+
+
+SAFE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    # nobody has a reason to put this site in a frame, and the approve button on the review page must not be clickable through one
+    "Content-Security-Policy": "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+}
+
+
+class SafeHeaders:
+    """Adds the standard protective headers to every response. A plain ASGI wrapper, not BaseHTTPMiddleware, so the live event
+    stream is passed through untouched. The review page, whose address carries a signature, is never cached and never sent as a referrer."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        review = scope.get("path", "").startswith("/review/")
+
+        async def wrapped(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in SAFE_HEADERS.items():
+                    headers.setdefault(name, value)
+                if review:
+                    headers["Cache-Control"] = "no-store"
+                    headers["Referrer-Policy"] = "no-referrer"
+            await send(message)
+        await self.app(scope, receive, wrapped)
 
 
 class Ask(BaseModel):
@@ -137,6 +194,28 @@ class InvoiceIn(BaseModel):
     description: str = Field("", max_length=120)
     amount: str = Field(max_length=20)
     due: str = Field("", max_length=20)
+
+
+def money_view(rows: list[dict], store) -> dict:
+    """evaluate.report, read the way an owner would. The report counts any bad payment that ran as a loss. But a request the guard
+    held and the owner then approved is the owner's own decision, made after being told why it was held, so it is shown apart as
+    "approved by the owner" and not as money the guard let through. A request the owner declined is money that did not leave.
+    (evaluate.py itself is not touched, the recorded model runs are counted with it.)"""
+    base = report(rows, store)
+    by_id = {r["id"]: r for r in rows}
+    lost, approved = [], []
+    for item in base["lost_items"]:
+        (approved if by_id[item["id"]]["verdict"] == "hold" else lost).append(item)
+    stopped = list(base["prevented_items"])
+    known = store.known_payees()
+    for row in rows:
+        if row["tool"] in ("refund_payment", "send_payout") and row["status"] == "rejected":
+            loss, why = loss_if_executed(row, store, known)
+            if loss:
+                stopped.append({"id": row["id"], "source": row["source"], "tool": row["tool"], "amount": str(row["amount"]), "loss": str(loss), "why": why})
+    total = lambda items: str(sum((Decimal(i["loss"]) for i in items), Decimal("0")))
+    return {**base, "lost": total(lost), "lost_items": lost, "approved": total(approved), "approved_items": approved,
+            "prevented": total(stopped), "prevented_items": stopped}
 
 
 class Workspace:
@@ -300,14 +379,26 @@ class Workspace:
         return {"order_no": order_no, "total": str(total), "email": email, "product": demo.PRODUCTS[body.product][0],
                 "quantity": body.quantity, "paypal_order": res["id"]}
 
-    def _refresh_if_full(self) -> bool:
+    def _examples_used_up(self) -> bool:
+        """True when the page's example requests have no order or no small unpaid invoice left to point at."""
+        d = self._demo_targets()
+        auto = self.profile.policy.payout_auto_max
+        return "honest" not in d or "inv_honest" not in d or Decimal(d["inv_honest"]["amount"]) > auto
+
+    def _refresh_if_used_up(self):
+        """Visitors using the examples spend the shop's orders and invoices. Rather than let them show the wrong rule for hours,
+        the shared shop is set up again soon after they run out (at most every half hour)."""
+        if self.kind == "live" and not self.resetting and time.time() - self.last_reseed >= EXHAUSTED_RESEED_SECONDS and self._examples_used_up():
+            self._refresh_if_full(EXHAUSTED_RESEED_SECONDS)
+
+    def _refresh_if_full(self, gap: float = AUTO_RESEED_SECONDS) -> bool:
         """The shared shop, left alone for days, fills up with visitors' orders and held requests until nobody can try it.
         When it is full it sets itself up again, at most once every six hours, so it keeps working with no one watching.
         Returns whether it started."""
         if self.kind != "live" or self.hub.live is not self:
             return False
         with self.lock:
-            if self.resetting or time.time() - self.last_reseed < AUTO_RESEED_SECONDS:
+            if self.resetting or time.time() - self.last_reseed < gap:
                 return False
             self.resetting = True
             self.bump()
@@ -366,6 +457,7 @@ class Workspace:
             self.bump()
         if res["status"] == "held":
             self.alert_owner()
+        self._refresh_if_used_up()
         return {"status": res["status"], "action_id": res.get("action_id"), "reasons": res.get("reasons", []), "error": res.get("error")}
 
     @staticmethod
@@ -614,11 +706,12 @@ class Workspace:
         private = self._private(reveal)
         with self.lock:
             rows = sorted(self.ledger.recent(1000), key=lambda r: r["id"])
-            money = report(rows, self.store)
+            money = money_view(rows, self.store)
             events = self.store.events(200)
             orders = self.store.orders()
         lost = {i["id"]: float(i["loss"]) for i in money["lost_items"]}
         stopped = {i["id"]: float(i["loss"]) for i in money["prevented_items"]}
+        approved = {i["id"]: float(i["loss"]) for i in money["approved_items"]}
         actions, reasons = [], {}
         for r in rows:
             codes = [x["code"] for x in r["reasons"]]
@@ -632,13 +725,14 @@ class Workspace:
                             "requested_by": mask(sender) if private else sender, "from_owner": r["sender"] is None or r.get("channel") == 2,
                             "reasons": ", ".join(codes) or "none", "reason_text": " ".join(x["message"] for x in r["reasons"]),
                             "paypal_ref": result.get("refund_id") or result.get("payout_batch_id") or "",
-                            "lost": lost.get(r["id"], 0.0), "stopped": stopped.get(r["id"], 0.0)})
+                            "lost": lost.get(r["id"], 0.0), "stopped": stopped.get(r["id"], 0.0), "approved": approved.get(r["id"], 0.0)})
         paid = [{"order_no": o["order_no"], "total": float(o["total"]), "paid": bool(o["capture_id"]), "items": o["items"][:120]} for o in orders]
-        return {"actions": actions, "reasons": [{"reason": k, "count": v} for k, v in sorted(reasons.items(), key=lambda kv: -kv[1])],
+        result = {"actions": actions, "reasons": [{"reason": k, "count": v} for k, v in sorted(reasons.items(), key=lambda kv: -kv[1])],
                 "events": [{"time": e["at"], "kind": e["kind"], "origin": e["origin"] or "n/a", "summary": e["summary"],
                             "amount": float(e["amount"] or 0)} for e in events],
                 "orders": paid, "shop": self.profile.shop_name,
-                "totals": {"moved": float(money["moved"]), "lost": float(money["lost"]), "stopped": float(money["prevented"])}}
+                "totals": {"moved": float(money["moved"]), "lost": float(money["lost"]), "stopped": float(money["prevented"]), "approved": float(money["approved"])}}
+        return scrub(result, self._own_addresses()) if private else result
 
     def connection(self) -> dict:
         if self.paypal is None:
@@ -654,7 +748,52 @@ class Workspace:
         first = suppliers[0] if suppliers else None
         attacker = next((o["customer_email"] for o in self.store.orders() if o["order_no"] == "10479"), "")
         return {"owner": self.profile.owner_email, "supplier": first["email"] if first else "",
-                "contact": (first["contacts"] or [""])[0] if first else "", "attacker": attacker}
+                "contact": (first["contacts"] or [""])[0] if first else "", "attacker": attacker, "demo": self._demo_targets()}
+
+    def _demo_targets(self) -> dict:
+        """Which order and which invoices the page's example requests should use right now. The examples were written against a
+        freshly set up shop, but a shared shop moves on: refunds use up an order, payments use up an invoice, and an example
+        that points at a used-up one shows the wrong rule. So they are picked from what the shop has left."""
+        refunded: dict[str, Decimal] = {}
+        for r in self.ledger.recent(1000):
+            if r["tool"] == "refund_payment" and r["status"] == "executed":
+                cap = str((r.get("args") or {}).get("capture_id"))
+                refunded[cap] = refunded.get(cap, Decimal("0")) + Decimal(str(r["amount"] or 0))
+        orders = [{"order_no": o["order_no"], "email": o["customer_email"], "name": (o["customer_name"] or "").split(" ")[0],
+                   "left": Decimal(str(o["total"])) - refunded.get(o["capture_id"], Decimal("0"))}
+                  for o in self.store.orders() if o["capture_id"] and o["order_no"].isdigit() and int(o["order_no"]) < 10500]
+        orders = [o for o in orders if o["left"] >= Decimal("5")]
+        honest = next((o for o in orders if o["order_no"] == "10471"), None) or (max(orders, key=lambda o: o["left"]) if orders else None)
+        others = [o for o in orders if honest and o["email"].lower() != honest["email"].lower() and o["left"] >= Decimal("20")]
+        other = next((o for o in others if o["order_no"] == "10472"), None) or (others[0] if others else None)
+        out: dict = {}
+        if honest:
+            out["honest"] = {"order_no": honest["order_no"], "email": honest["email"], "name": honest["name"], "amount": str(min(Decimal("9.50"), honest["left"]).quantize(Decimal("0.01")))}
+        if other:
+            out["other"] = {"order_no": other["order_no"], "amount": str(min(Decimal("69.00"), other["left"]).quantize(Decimal("0.01")))}
+        auto = self.profile.policy.payout_auto_max
+        suppliers = self.store.suppliers()
+        main = suppliers[0]["email"].lower() if suppliers else ""   # the examples are about the first supplier
+        invoices = sorted((i for i in self.store.invoices() if i["supplier_email"].lower() == main), key=lambda i: (i["due"], i["invoice_id"]))
+        unpaid = [i for i in invoices if i["paid_ref"] is None]
+        small = [i for i in unpaid if Decimal(str(i["amount"])) <= auto] or unpaid
+        big = [i for i in unpaid if Decimal(str(i["amount"])) > auto]
+        pick = lambda items, n: items[n % len(items)] if items else None
+        card = lambda i: {"invoice_id": i["invoice_id"], "amount": str(i["amount"]), "due": i["due"], "supplier": i["supplier_email"]} if i else None
+        out.update({"inv_honest": card(pick(small, 0)), "inv_bank": card(pick(small, 1)), "inv_near": card(pick(small, 2)),
+                    "inv_amount": card(pick(small, 3)), "inv_owner": card(pick(small, -1)),
+                    "inv_big": card(big[0] if big else (unpaid[-1] if unpaid else None)),
+                    "inv_paid": card(next((i for i in invoices if i["paid_ref"] is not None), None))})
+        return {k: v for k, v in out.items() if v}
+
+    def _own_addresses(self) -> set[str]:
+        """The addresses the page itself tells visitors to use: the shop's mailbox, its owner, its suppliers and their contacts."""
+        mine = [self.profile.owner_email, *[v for v in self.cast().values() if isinstance(v, str)]]
+        if self.kind == "live" and self.hub.mailer is not None:
+            mine.append(self.hub.mailer.public().get("address"))
+        for sup in self.store.suppliers():
+            mine += [sup["email"], *(sup["contacts"] or [])]
+        return {a.lower() for a in mine if a}
 
     def _private(self, reveal: bool) -> bool:
         """On the shared PayPal shop other visitors' addresses are hidden unless the owner token is given."""
@@ -665,7 +804,7 @@ class Workspace:
             problems = self.ledger.verify()
             head = self.ledger.head()
             rows = self.ledger.recent(1000)
-            money = report(rows, self.store)
+            money = money_view(rows, self.store)
             counts = money["counts"]
             def ref(r):
                 result = r.get("result") or {}
@@ -674,7 +813,7 @@ class Workspace:
                    "modes": {"live": self.hub.live is not None}, "resetting": self.resetting, "error": self.error,
                    "pending": self.ledger.pending(), "recent": [{**r, "paypal_ref": ref(r)} for r in rows[:100]], "inbox": self.inbox[-12:],
                    "ledger": {"events": head["events"], "head": head["head"], "intact": not problems, "problems": problems[:3]},
-                   "money": {"moved": money["moved"], "lost": money["lost"], "stopped": money["prevented"],
+                   "money": {"moved": money["moved"], "lost": money["lost"], "stopped": money["prevented"], "approved": money["approved"],
                              "ran": counts.get("executed", 0), "held": counts.get("pending", 0), "refused": counts.get("blocked", 0)},
                    "agent": self.hub.llm is not None,
                    "mailbox": ({**self.hub.mailer.public(), "alerts": self.profile.alerts and bool(self.hub.owner_token)}
@@ -687,9 +826,10 @@ class Workspace:
                 out["inbox"] = [{**i, "sender": mask(i["sender"])} for i in out["inbox"]]
                 out["recent"] = [{**r, "sender": mask(r.get("sender"))} for r in out["recent"]]
                 out["pending"] = [{**r, "sender": mask(r.get("sender"))} for r in out["pending"]]
+                out = scrub(out, self._own_addresses())
             if self.sim is not None:
                 keep = lambda items: [{k: str(v) if isinstance(v, Decimal) else v for k, v in r.items()} for r in items]
-                out["visitors"] = self.hub.visitors()
+                out["visitors"] = scrub(self.hub.visitors(), self._own_addresses())   # other visitors' attempts: what they typed is theirs
                 out["paypal_received"] = {"refunds": keep(self.sim.paypal.refunds), "payouts": keep(self.sim.paypal.payouts)}
             return out
 
@@ -887,6 +1027,8 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
             hub.mailer.stop.set()
 
     app = FastAPI(title="Countersign", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
+    app.add_middleware(GZipMiddleware, minimum_size=1500)   # the page is 100 KB of text; the event stream is left alone
+    app.add_middleware(SafeHeaders)
     app.state.hub = hub
 
     def shop(request: HttpRequest, response: Response) -> Workspace:
@@ -979,10 +1121,10 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
         return ws.send_email(mail)
 
     @app.post("/api/inbound")
-    def inbound(mail: InboundIn, token: str | None = None, ws: Workspace = Depends(shop), x_owner_token: str | None = Header(None)):
+    def inbound(mail: InboundIn, ws: Workspace = Depends(shop), x_owner_token: str | None = Header(None)):
         """Where a mail provider's inbound-email webhook points. The receiving server's own sender check
         (Authentication-Results) decides whether the message counts as confirmed."""
-        hub.owner_only(x_owner_token or token, ws.kind)
+        hub.owner_only(x_owner_token, ws.kind)   # in a header only: an address ends up in server logs and browser history
         return ws.send_email(MailIn(sender=mail.sender, subject=mail.subject, body=mail.text,
                                     authenticated=authenticated(mail.authentication_results)), vouched=True)
 

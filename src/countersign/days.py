@@ -64,9 +64,23 @@ def _totals(run: dict) -> dict:
 NAMES = {"standard": "Everyday inbox", "holdout": "Tougher inbox", "final": "Hardest inbox"}
 
 
+def _rejected_by_paypal(run: dict) -> int:
+    """Money steps PayPal's sandbox turned down in this run, usually because the test account had run short of funds."""
+    return sum(1 for e in run["emails"] for s in e.get("steps", []) if s.get("tool") in ("refund_payment", "send_payout") and s.get("status") == "error")
+
+
+def best_complete(data_dir: Path, mode: str, model: str, inbox: str) -> dict | None:
+    """The run a visitor should be shown: of the complete runs made with the current code, the one in which PayPal turned down
+    the fewest payments, newest first among equals. A replay full of "failed" steps shows the test account's balance, not the
+    guard. (Every counted run still goes into the numbers. This only chooses which one is replayed.)"""
+    found = [r for r in _runs(data_dir) if r["mode"] == mode and not r["incomplete"] and r.get("pinned") == model
+             and r.get("inbox", "standard") == inbox]
+    return min(reversed(found), key=_rejected_by_paypal, default=None)
+
+
 def build_day(data_dir: Path, inbox_name: str, model: str, assistant: str = "A") -> dict | None:
-    without = latest_complete(data_dir, "open", model, inbox_name, current=True)
-    with_it = latest_complete(data_dir, "guarded", model, inbox_name, current=True)
+    without = best_complete(data_dir, "open", model, inbox_name)
+    with_it = best_complete(data_dir, "guarded", model, inbox_name)
     if without is None or with_it is None:
         return None
     make_mails, label = INBOXES[inbox_name]

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Money the guard held and the owner then approved is no longer counted as "lost to bad requests". It is shown apart as approved by the owner (the owner's own decision, made after being told why it was held), and a request the owner declined counts as money stopped. The approval page now says plainly that approving sends the money even though the guard flagged the request. `evaluate.py` is untouched, so the recorded runs are counted as before.
+- Real-looking addresses are hidden everywhere on the shared shop, including inside reasons, payees, email bodies and the record of broken rules, and not only in the fields known to hold an address. The shop's own addresses and the demo's made-up ones stay readable.
+- The page's example requests are picked from what the shared shop has left: an order with something to refund and invoices still unpaid. Before, they pointed at fixed order and invoice numbers, so after a few visitors the examples showed the wrong rule. When the examples run out the shop sets itself up again (at most every half hour). A verdict a visitor is reading is no longer wiped when the shop changes.
+- The recorded day that is replayed is the run in which PayPal's sandbox turned down the fewest payments, so a replay no longer opens on "failed" steps caused by the test account running short of funds. The replay says what "failed" means.
+- Every response carries protective headers (no framing, no content sniffing, a stricter referrer policy), the review page is never cached, and the page is sent compressed.
+- Text contrast raised to the accessible level in both themes, a clear keyboard focus outline, a proper page title and canonical address, and sections on screen can no longer stay hidden if the browser is late reporting them.
+- An address in a PayPal message keeps its @ sign.
+
 - Fixed: the ledger check sent its dates with a bare "+", which a web address reads as a space, so PayPal refused the search with a 400. The dates are now encoded, and when PayPal refuses for another reason its own words are shown.
 - The dashboard has a search box (a custom widget) on both pages, and the filter buttons have room to show their choices.
 - The Setup page is in plainer words: the PayPal connection says what the app may do (refund, pay suppliers) with the technical permission list folded away, the ledger check and the webhook are explained without jargon.

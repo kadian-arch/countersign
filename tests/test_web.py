@@ -88,7 +88,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.c.get("/brand/..%2Findex.html").status_code, 404)
         s = self.c.get("/api/state").json()
         self.assertEqual((s["mode"], s["pending"], s["ledger"]["intact"], s["agent"]), ("sim", [], True, False))
-        self.assertEqual(s["money"], {"moved": "0", "lost": "0", "stopped": "0", "ran": 0, "held": 0, "refused": 0})
+        self.assertEqual(s["money"], {"moved": "0", "lost": "0", "stopped": "0", "approved": "0", "ran": 0, "held": 0, "refused": 0})
 
     def test_check_gives_the_verdict_and_records_nothing(self):
         self.assertEqual(self.c.post("/api/check", json=HONEST).json()["verdict"], "allow")
@@ -118,7 +118,7 @@ class WebTests(unittest.TestCase):
                          [("refund_payment", "executed", 9.5), ("send_payout", "pending", 73.4)])
         self.assertEqual(a["actions"][1]["stopped"], 73.4)
         self.assertEqual(a["reasons"][0]["reason"], "new_payee")
-        self.assertEqual(a["totals"], {"moved": 9.5, "lost": 0.0, "stopped": 73.4})
+        self.assertEqual(a["totals"], {"moved": 9.5, "lost": 0.0, "stopped": 73.4, "approved": 0.0})
 
     def test_the_owner_can_approve_or_reject_what_is_held(self):
         held = self.c.post("/api/submit", json=BIG_OWNER).json()
@@ -497,3 +497,136 @@ class StreamAndAccessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OwnerDecisionMoneyTests(unittest.TestCase):
+    """Money the guard held and the owner then approved is the owner's decision, not a loss the guard let through."""
+
+    def setUp(self):
+        self.c = TestClient(create_app("sim", llm=None))
+
+    def held_bad_payment(self):
+        out = self.c.post("/api/submit", json=NEW_BANK).json()
+        self.assertEqual(out["status"], "held", out)
+        return out["action_id"]
+
+    def money(self):
+        return self.c.get("/api/state").json()["money"]
+
+    def test_a_bad_payment_the_guard_held_and_the_owner_approved_is_shown_apart_and_not_as_lost(self):
+        action = self.held_bad_payment()
+        self.assertEqual(self.c.post(f"/api/actions/{action}/approve").status_code, 200)
+        money = self.money()
+        self.assertEqual((money["lost"], money["approved"]), ("0", "73.40"))
+        rows = self.c.get("/api/analytics").json()
+        self.assertEqual((rows["totals"]["lost"], rows["totals"]["approved"]), (0, 73.4))
+        self.assertEqual(rows["actions"][-1]["approved"], 73.4)
+        self.assertEqual(rows["actions"][-1]["lost"], 0)
+
+    def test_a_bad_payment_the_owner_declined_counts_as_stopped(self):
+        action = self.held_bad_payment()
+        self.assertEqual(self.money()["stopped"], "73.40")      # waiting: not gone yet
+        self.assertEqual(self.c.post(f"/api/actions/{action}/reject").status_code, 200)
+        money = self.money()
+        self.assertEqual((money["stopped"], money["lost"], money["approved"]), ("73.40", "0", "0"))
+
+    def test_a_bad_payment_that_ran_without_being_held_is_still_a_loss(self):
+        from countersign.web import money_view
+        store = type("S", (), {"known_payees": lambda self: {"accounts@eastgate-packaging.example"},
+                               "invoice_row": lambda self, i: None, "order_by_capture": lambda self, c: None})()
+        row = {"id": 1, "tool": "send_payout", "status": "executed", "verdict": "allow", "amount": "73.40", "source": "inbox:1",
+               "args": {"receiver": "ryan.mallory@example.com", "invoice_id": "20442"}, "sender": "x@example.com", "channel": 1}
+        out = money_view([row], store)
+        self.assertEqual((out["lost"], out["approved"]), ("73.40", "0"))
+        out = money_view([{**row, "verdict": "hold"}], store)      # the same payment, approved by the owner
+        self.assertEqual((out["lost"], out["approved"]), ("0", "73.40"))
+
+
+class PrivacyTests(unittest.TestCase):
+    """On the shared shop another visitor's address must not show anywhere, not only in the fields known to hold one."""
+    VISITOR = "jane.visitor@gmail.com"
+
+    def setUp(self):
+        self.app = create_app("live", owner_token="secret", llm=None, live_backend=backend, seeder=lambda ws: None)
+        self.client = TestClient(self.app)
+        self.c = self.client.__enter__()
+        self.addCleanup(self.client.__exit__, None, None, None)
+        ws = self.app.state.hub.live
+        order = ws.store.orders()[0]
+        self.c.post("/api/submit", json={"sender": self.VISITOR, "tool": "refund_payment", "order_no": order["order_no"], "amount": "5.00",
+                                         "message": f"Please refund order {order['order_no']}, 5.00. My address is {self.VISITOR}."})
+
+    def test_a_visitors_address_is_hidden_wherever_it_appears_to_the_public(self):
+        for path in ("/api/state", "/api/analytics", "/api/book"):
+            text = self.c.get(path).text
+            self.assertNotIn(self.VISITOR, text, path)
+        self.assertIn("j***@gmail.com", self.c.get("/api/analytics").text)
+
+    def test_the_owner_sees_everything(self):
+        text = self.c.get("/api/analytics", headers={"X-Owner-Token": "secret"}).text
+        self.assertIn(self.VISITOR, text)
+
+    def test_the_shops_own_addresses_and_made_up_ones_stay_readable(self):
+        from countersign.web import scrub
+        keep = {"owner@shop.test"}
+        self.assertEqual(scrub("owner@shop.test and ryan.mallory@example.com and a@b.example.ru", keep), "owner@shop.test and ryan.mallory@example.com and a@b.example.ru")
+        self.assertEqual(scrub({"x": ["write to bob@gmail.com"]}, keep), {"x": ["write to b***@gmail.com"]})
+        self.assertEqual(scrub(5, keep), 5)
+
+
+from decimal import Decimal
+
+
+class DemoTargetTests(unittest.TestCase):
+    """The page's example requests must keep pointing at an order and invoices the shop still has."""
+
+    def setUp(self):
+        self.c = TestClient(create_app("sim", llm=None))
+
+    def demo(self):
+        return self.c.get("/api/state").json()["cast"]["demo"]
+
+    def test_a_fresh_shop_gets_the_orders_and_invoices_the_examples_were_written_for(self):
+        d = self.demo()
+        self.assertEqual((d["honest"]["order_no"], d["honest"]["amount"], d["other"]["order_no"]), ("10471", "9.50", "10472"))
+        self.assertEqual((d["inv_honest"]["invoice_id"], d["inv_big"]["invoice_id"]), ("20418", "20455"))
+        self.assertEqual(d["inv_paid"]["invoice_id"], "20399")
+
+    def test_an_order_that_has_been_refunded_away_is_replaced_by_one_with_something_left(self):
+        order = next(o for o in self.c.get("/api/book").json()["orders"] if o["order_no"] == "10471")
+        total = Decimal(order["total"])
+        amount = str(total - Decimal("2.00") if total <= Decimal("52") else Decimal("50.00"))
+        out = self.c.post("/api/submit", json={"sender": order["customer_email"], "tool": "refund_payment", "order_no": "10471", "amount": amount,
+                                               "message": f"Order 10471 came crushed, could I have {amount} back?"}).json()
+        self.assertEqual(out["status"], "executed", out)
+        honest = self.demo()["honest"]
+        self.assertNotEqual(honest["order_no"], "10471")
+        self.assertIn("amount", honest)
+
+    def test_an_invoice_that_has_been_paid_is_replaced_by_the_next_one_due(self):
+        before = self.demo()["inv_honest"]
+        out = self.c.post("/api/submit", json={"sender": "marta@eastgate-packaging.example", "tool": "send_payout",
+                                               "receiver": "accounts@eastgate-packaging.example", "invoice_id": before["invoice_id"], "amount": before["amount"],
+                                               "message": f"Reminder: invoice {before['invoice_id']} ({before['amount']}) is due. Please pay."}).json()
+        self.assertEqual(out["status"], "executed", out)
+        self.assertNotEqual(self.demo()["inv_honest"]["invoice_id"], before["invoice_id"])
+
+
+class HeaderTests(unittest.TestCase):
+    def setUp(self):
+        self.c = TestClient(create_app("sim", llm=None))
+
+    def test_every_response_carries_the_protective_headers(self):
+        for path in ("/", "/healthz", "/api/state", "/dashboard/", "/brand/favicon.svg"):
+            h = self.c.get(path).headers
+            self.assertEqual(h["x-content-type-options"], "nosniff", path)
+            self.assertIn("frame-ancestors 'none'", h["content-security-policy"], path)
+
+    def test_the_review_page_is_never_cached_or_sent_on_as_a_referrer(self):
+        h = self.c.get("/review/1?sig=x").headers
+        self.assertEqual((h["cache-control"], h["referrer-policy"]), ("no-store", "no-referrer"))
+
+    def test_the_page_is_sent_compressed_to_a_browser_that_accepts_it(self):
+        r = self.c.get("/", headers={"Accept-Encoding": "gzip"})
+        self.assertEqual(r.headers.get("content-encoding"), "gzip")
+        self.assertIn("Countersign", r.text)

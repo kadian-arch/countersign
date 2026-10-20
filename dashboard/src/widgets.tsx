@@ -52,7 +52,18 @@ function Ribbon({ widgetApi, dataMapping }: AgWidgetParams<any>) {
 function Search({ widgetApi, dataMapping }: AgWidgetParams<any>) {
   const field = dataMapping.value?.[0];
   const [text, setText] = useState("");
+  const [sample, setSample] = useState("");
   useEffect(() => { widgetApi.setDisplayState(field ? "displayed" : "incompleteDataMapping"); }, [widgetApi, field]);
+  // show one real value as the hint, because addresses on the shared shop are partly hidden (d***@gmail.com) and typing a whole name finds nothing
+  useEffect(() => {
+    if (!field) return;
+    let live = true;
+    widgetApi.getData({ fields: [field] }).then((res: any) => {
+      const first = (res.results.rows as Record<string, any>[]).map((r) => r[field.key]).find((v) => v != null && String(v).trim());
+      if (live && first != null) setSample(String(first).slice(0, 40));
+    }).catch(() => undefined);
+    return () => { live = false; };
+  }, [widgetApi, field]);
   const apply = (next: string) => {
     setText(next);
     if (!field) return;
@@ -61,7 +72,7 @@ function Search({ widgetApi, dataMapping }: AgWidgetParams<any>) {
   return (
     <div style={{ display: "flex", alignItems: "center", height: "100%", padding: "0 8px", gap: 8 }}>
       <input
-        value={text} onChange={(e) => apply(e.target.value)} placeholder={field ? `Type to search ${widgetApi.getFieldName(field).toLowerCase()}` : "Choose a field to search"}
+        value={text} onChange={(e) => apply(e.target.value)} placeholder={field ? `Search ${widgetApi.getFieldName(field).toLowerCase()}${sample ? `, for example ${sample}` : ""}` : "Choose a field to search"}
         aria-label="Search" spellCheck={false}
         style={{ flex: 1, minWidth: 0, background: "#ffffff0d", color: palette.ink, border: `1px solid ${palette.line}`, borderRadius: 9, padding: "9px 12px", font: "15px Figtree, sans-serif", outline: "none" }}
       />

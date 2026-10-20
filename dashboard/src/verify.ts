@@ -27,10 +27,10 @@ export function knownMoney(a: Analytics, runs: RunRow[]): Set<number> {
   const add = (v: unknown) => out.add(cents(v));
   const fromText = (t: unknown) => { for (const m of String(t ?? "").matchAll(/\$\s?([\d,]+(?:\.\d{1,2})?)/g)) add(m[1].replace(/,/g, "")); };
 
-  for (const k of ["moved", "lost", "stopped"] as const) add(a.totals[k]);
+  for (const k of ["moved", "lost", "stopped", "approved"] as const) add(a.totals[k]);
   for (const e of a.events) { add(e.amount); fromText(e.summary); }
-  for (const r of a.actions) { add(r.amount); add(r.lost); add(r.stopped); fromText(r.reason_text); }
-  for (const measure of ["amount", "lost", "stopped"]) {
+  for (const r of a.actions) { add(r.amount); add(r.lost); add(r.stopped); add(r.approved); fromText(r.reason_text); }
+  for (const measure of ["amount", "lost", "stopped", "approved"]) {
     add(a.actions.reduce((n, r) => n + Number(r[measure] || 0), 0));
     for (const group of Object.values(GROUPS)) {
       const sums = new Map<string, number>();

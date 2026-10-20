@@ -17,6 +17,8 @@ const brief = (r: Row) => ({
 
 const GLOSSARY = `Verdicts: ALLOW (the guard let it run), HOLD (it waits for the owner to approve or decline), BLOCK (refused outright).
 Outcomes: Ran, Held, Refused, Failed (PayPal itself rejected it), Declined by the owner.
+Money lost means money the guard let through that it should not have. When the guard held a request and the owner then approved it, that is
+the owner's decision: it is reported as approved by the owner and is not a loss. Money stopped includes requests the owner declined.
 Reason codes: over_limit (above the limit for that kind of request), day_limit (would pass the daily refund total),
 no_refund_request / no_payment_request (the message did not actually ask for it, the instruction came from somewhere else),
 sender_mismatch (the person asking is not the buyer on that order), sender_unverified (the email could not be verified),
@@ -63,7 +65,7 @@ export function analystTools(a: Analytics, runs: RunRow[]): AgAiTool[] {
     tool("shop_summary", "Totals for the whole shop: how many requests, how they ended, and the money moved, lost and stopped.", {}, () => {
       const outcomes: Record<string, number> = {};
       for (const r of rows) outcomes[r.outcome] = (outcomes[r.outcome] ?? 0) + 1;
-      return { shop: a.shop, requests: rows.length, outcomes, money_moved: usd(a.totals.moved), money_lost: usd(a.totals.lost), money_stopped: usd(a.totals.stopped), paypal_events: a.events.length };
+      return { shop: a.shop, requests: rows.length, outcomes, money_moved: usd(a.totals.moved), money_lost: usd(a.totals.lost), money_stopped: usd(a.totals.stopped), money_approved_by_the_owner: usd(a.totals.approved), paypal_events: a.events.length };
     }),
     tool("group_requests", "Count or add up requests grouped by one field, for example how many were held per reason, or the money stopped per day.", {
       by: { type: "string", enum: Object.keys(by), description: "What to group by." },
@@ -98,7 +100,7 @@ export function analystTools(a: Analytics, runs: RunRow[]): AgAiTool[] {
     }, ({ id }) => {
       const r = rows.find((x) => x.id === Number(id));
       if (!r) throw new Error(`there is no request ${id}`);
-      return { ...brief(r), paypal_reference: r.paypal_ref || "none (PayPal was not called)", money_lost: usd(r.lost), money_stopped: usd(r.stopped), asked_by_the_owner: r.from_owner };
+      return { ...brief(r), paypal_reference: r.paypal_ref || "none (PayPal was not called)", money_lost: usd(r.lost), money_stopped: usd(r.stopped), approved_by_the_owner: usd(r.approved), asked_by_the_owner: r.from_owner };
     }),
     tool("compare_runs", "The recorded model runs: how an AI agent wired straight to PayPal did on fixed inboxes of honest emails and attacks, against the same agent through Countersign. Groups the emails and adds up money lost, money stopped and details leaked for each side.", {
       by: { type: "string", enum: ["inbox", "model", "kind", "without_outcome", "with_outcome"], description: "What to group by (default: everything together)." },

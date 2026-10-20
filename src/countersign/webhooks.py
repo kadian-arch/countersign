@@ -51,7 +51,7 @@ def _money(value) -> Decimal:
 
 
 def _plain(text, limit: int, fallback: str) -> str:
-    return re.sub(r"[^\w .,'#&/-]", "", str(text or ""))[:limit].strip() or fallback
+    return re.sub(r"[^\w .,'#&/@-]", "", str(text or ""))[:limit].strip() or fallback   # "@" stays so an address still reads as one
 
 
 class Handler:

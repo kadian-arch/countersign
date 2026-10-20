@@ -7,7 +7,7 @@ export interface Analytics {
   events: Record<string, any>[];
   orders: Record<string, any>[];
   shop: string;
-  totals: { moved: number; lost: number; stopped: number };
+  totals: { moved: number; lost: number; stopped: number; approved: number };
 }
 
 // one row per email in each recorded model run, with what happened without Countersign and with it (/api/runs)
@@ -49,8 +49,9 @@ export function sources(a: Analytics, runs: RunRow[]): AgDataSourcesDefinition {
           { id: "reasons", name: "Reason codes", format: "textFormat" },
           { id: "reason_text", name: "Why", format: "textFormat" },
           { id: "paypal_ref", name: "PayPal reference", format: "textFormat" },
-          { id: "lost", name: "Money lost", description: "Dollars that left the shop because of a request it should not have granted", ...money },
-          { id: "stopped", name: "Money stopped", description: "Dollars Countersign kept from leaving", ...money },
+          { id: "lost", name: "Money lost", description: "Dollars that left the shop because the guard let through a request it should not have", ...money },
+          { id: "stopped", name: "Money stopped", description: "Dollars Countersign kept from leaving: held and then refused, declined by the owner, or blocked", ...money },
+          { id: "approved", name: "Approved by the owner", description: "Dollars the guard held and the owner then approved. The owner's own decision, so not counted as lost", ...money },
         ],
       },
       {

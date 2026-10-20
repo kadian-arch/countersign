@@ -278,3 +278,13 @@ class RegisterRouteTests(Base):
         self.assertEqual(self.ws.store.get_setting("webhook_id"), "WH-9")
         paypal = self.c.get("/api/state").json()["paypal"]
         self.assertEqual((paypal["webhook"], paypal["webhook_url"]), (True, "https://shop.example/api/paypal/webhook"))
+
+
+class PlainTextTests(unittest.TestCase):
+    def test_an_email_address_in_a_paypal_message_keeps_its_at_sign(self):
+        from countersign.webhooks import _plain
+        self.assertEqual(_plain("accounts@eastgate-example.com", 80, "a supplier"), "accounts@eastgate-example.com")
+
+    def test_markup_and_other_odd_characters_are_still_removed(self):
+        from countersign.webhooks import _plain
+        self.assertEqual(_plain("<b>x</b>; drop", 80, "none"), "bx/b drop")

@@ -40,7 +40,7 @@ export const initialState = (size: Size = "desktop") => ({
       lost: { type: "value", dataMapping: { value: [{ id: "actions.lost", aggregation: "sum" }] }, format: title("Money lost") },
       stopped: { type: "value", dataMapping: { value: [{ id: "actions.stopped", aggregation: "sum" }] }, format: title("Money stopped") },
       requests: { type: "value", dataMapping: { value: [{ id: "actions.id", aggregation: "count" }] }, format: title("Requests judged") },
-      events: { type: "value", dataMapping: { value: [{ id: "events.kind", aggregation: "count" }] }, format: title("PayPal events") },
+      approved: { type: "value", dataMapping: { value: [{ id: "actions.approved", aggregation: "sum" }] }, format: title("Approved by the owner") },
       byOutcome: filter("actions.outcome", "Outcome"),
       byKind: filter("actions.kind", "Kind"),
       search: { type: "search", dataMapping: { value: [{ id: "actions.requested_by" }] }, format: title("Search who asked") },
@@ -53,7 +53,7 @@ export const initialState = (size: Size = "desktop") => ({
         format: title("Every request, newest last"),
       },
     }, [
-      { h: 4, ids: ["lost", "stopped", "requests", "events"] },
+      { h: 4, ids: ["lost", "stopped", "approved", "requests"] },
       { h: 5, ids: ["byOutcome", "byKind", "search"] },
       { h: 5, ids: ["ribbon"] },
       { h: 9, ids: ["reasons", "perDay"] },

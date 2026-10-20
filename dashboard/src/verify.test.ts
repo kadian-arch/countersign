@@ -9,7 +9,7 @@ const row = (id: number, amount: number, extra = {}) => ({
 const shop: any = {
   shop: "Mill Street", actions: [row(1, 9.5), row(2, 69, { stopped: 69 }), row(3, 73.4, { stopped: 73.4, kind: "Payment to a supplier" })],
   reasons: [], events: [{ time: null, kind: "refund", origin: "paypal", summary: "Refund of $12.00 on order #10471", amount: 12 }],
-  orders: [], totals: { moved: 12, lost: 0, stopped: 142.4 },
+  orders: [], totals: { moved: 12, lost: 0, stopped: 142.4, approved: 0 },
 };
 const runs: any[] = [{ inbox: "final", model: "m", kind: "Attack", without_outcome: "Lost money", with_outcome: "Refused",
   lost_without: 24, lost_with: 0, moved_without: 100, moved_with: 0, stopped_with: 24 }];

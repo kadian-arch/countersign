@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 import unittest
 from unittest import mock
 
@@ -65,8 +66,9 @@ class SharedShopTests(unittest.TestCase):
     def test_other_visitors_addresses_are_hidden(self):
         everything = json.dumps(self.c.get("/api/state").json()) + json.dumps(self.c.get("/api/book").json())
         self.assertNotIn("vera.lindqvist@example.com", everything)
-        self.assertNotIn("dana.whitfield@example.com", everything)
         self.assertIn("v***@example.com", everything)
+        # the demo's own made-up customer is the one the page's example requests are sent as, so that address is not private
+        self.assertNotIn('"customer_email": "dana.whitfield@example.com"', everything)
 
     def test_the_dashboard_feed_hides_them_too_and_carries_the_other_tables(self):
         feed = self.c.get("/api/analytics").json()
@@ -161,3 +163,16 @@ class FullShopTests(unittest.TestCase):
         with TestClient(practice) as c, mock.patch.object(web, "MAX_ORDERS", 1):
             c.post("/api/orders", json=VISITOR)
             self.assertEqual(c.post("/api/orders", json={**VISITOR, "email": "second@example.com"}).status_code, 429)
+
+    def test_when_the_examples_have_used_up_the_shops_invoices_it_sets_itself_up_again(self):
+        ws = self.ws
+        ws.last_reseed = 0.0
+        for inv in ws.store.invoices():                       # every small unpaid invoice is paid
+            if inv["paid_ref"] is None and Decimal(str(inv["amount"])) <= ws.profile.policy.payout_auto_max:
+                ws.store.mark_invoice_paid(inv["invoice_id"], "TEST-REF")
+        self.assertTrue(ws._examples_used_up())
+        held = {"sender": "someone@else.example", "tool": "send_payout", "receiver": "accounts@eastgate-packaging.example",
+                "invoice_id": "20455", "amount": "1240.00", "message": "Please pay invoice 20455 (1240.00) to the supplier."}
+        self.c.post("/api/submit", json=held)
+        self.wait_for_seed()
+        self.assertEqual(self.seeded, [1])

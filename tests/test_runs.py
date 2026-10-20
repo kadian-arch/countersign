@@ -80,6 +80,28 @@ class RunSelectionTests(unittest.TestCase):
             self.assertTrue(first.is_dir())
 
 
+class ReplayChoiceTests(unittest.TestCase):
+    def test_the_replayed_run_is_the_one_paypal_turned_down_least_not_just_the_newest(self):
+        from countersign.days import best_complete
+        from countersign.fingerprint import current
+        steps = lambda n: [{"emails": [{"steps": [{"tool": "refund_payment", "status": "error"}] * n}]}][0]
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            for name, fails in (("20261013-100000-open-a", 1), ("20261016-100000-open-b", 9), ("20261016-120000-open-c", 1)):
+                save(data, name, mode="open", model="m", pinned="m", inbox="final", fingerprint=current(), **steps(fails))
+            self.assertEqual(best_complete(data, "open", "m", "final")["folder"], "20261016-120000-open-c")   # fewest, newest of the two
+            self.assertIsNone(best_complete(data, "guarded", "m", "final"))
+
+    def test_with_no_failures_anywhere_it_is_the_newest(self):
+        from countersign.days import best_complete
+        from countersign.fingerprint import current
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            for name in ("20261013-100000-open-a", "20261016-100000-open-b"):
+                save(data, name, mode="open", model="m", pinned="m", inbox="final", fingerprint=current(), emails=[])
+            self.assertEqual(best_complete(data, "open", "m", "final")["folder"], "20261016-100000-open-b")
+
+
 class StreakTests(unittest.TestCase):
     def test_three_failures_in_a_row_stop_the_run(self):
         s = Streak(3)
