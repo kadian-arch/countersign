@@ -48,8 +48,41 @@ function Ribbon({ widgetApi, dataMapping }: AgWidgetParams<any>) {
   );
 }
 
+// "Search": a box that narrows every widget on the page to the rows whose chosen field contains what was typed
+function Search({ widgetApi, dataMapping }: AgWidgetParams<any>) {
+  const field = dataMapping.value?.[0];
+  const [text, setText] = useState("");
+  useEffect(() => { widgetApi.setDisplayState(field ? "displayed" : "incompleteDataMapping"); }, [widgetApi, field]);
+  const apply = (next: string) => {
+    setText(next);
+    if (!field) return;
+    widgetApi.applyFilter(next.trim() ? ({ field, operator: "contains", value: next.trim() } as never) : null);
+  };
+  return (
+    <div style={{ display: "flex", alignItems: "center", height: "100%", padding: "0 8px", gap: 8 }}>
+      <input
+        value={text} onChange={(e) => apply(e.target.value)} placeholder={field ? `Type to search ${widgetApi.getFieldName(field).toLowerCase()}` : "Choose a field to search"}
+        aria-label="Search" spellCheck={false}
+        style={{ flex: 1, minWidth: 0, background: "#ffffff0d", color: palette.ink, border: `1px solid ${palette.line}`, borderRadius: 9, padding: "9px 12px", font: "15px Figtree, sans-serif", outline: "none" }}
+      />
+      {text && <button onClick={() => apply("")} style={{ background: "transparent", color: palette.muted, border: 0, cursor: "pointer", font: "14px Figtree, sans-serif" }}>Clear</button>}
+    </div>
+  );
+}
+
 export const widgets = createWidgets({
   additionalTypes: [
+    {
+      id: "search",
+      label: "Search box",
+      icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" stroke="#6a82ff" stroke-width="4" stroke-linecap="round"><circle cx="21" cy="21" r="11"/><path d="M30 30l11 11"/></svg>',
+      comp: Search,
+      defaultSize: { width: 8, height: 3 },
+      minSize: { width: 4, height: 2 },
+      dataMapping: { value: { type: "field", supportedRoles: ["category"], required: true, aiDescription: "The text field to search in, for example who asked." } },
+      form: (p: any) => p.createDefaults({ dataMappingItems: [{ key: "value", label: "Search in" }] }),
+      ai: { label: "Search box", description: "A text box that narrows the whole page to rows whose chosen field contains what is typed.", usage: "Use it to find a requester, a subject or a reason." },
+    },
     {
       id: "verdict-ribbon",
       label: "Verdict ribbon",
@@ -66,7 +99,7 @@ export const widgets = createWidgets({
     },
   ],
   menu: [
-    { label: "Countersign", widgetIds: ["verdict-ribbon"] },
+    { label: "Countersign", widgetIds: ["verdict-ribbon", "search"] },
     { label: "Numbers", widgetIds: ["value", "grid", "pivot-grid"] },
     { label: "Charts", widgetIds: ["column-chart-grouped", "bar-chart-grouped", "line-chart", "area-chart", "donut-chart", "pie-chart", "treemap-chart"] },
     { label: "Filters", widgetIds: ["button-filter", "list-filter", "date-filter"] },

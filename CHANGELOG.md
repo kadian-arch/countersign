@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed: the ledger check sent its dates with a bare "+", which a web address reads as a space, so PayPal refused the search with a 400. The dates are now encoded, and when PayPal refuses for another reason its own words are shown.
+- The dashboard has a search box (a custom widget) on both pages, and the filter buttons have room to show their choices.
+- The Setup page is in plainer words: the PayPal connection says what the app may do (refund, pay suppliers) with the technical permission list folded away, the ledger check and the webhook are explained without jargon.
+
 ## 0.2.0
 
 The shop became a hosted product with a dashboard, PayPal webhooks and owner alerts, and the proof was rebuilt so that only

@@ -810,7 +810,7 @@ function emailPane(pane) {
   pane.append(el("h3", "t", "Connect your inbox"));
   const m = S.state && S.state.mailbox;
   if (m) pane.append(el("p", "sub", "The shop reads mail sent to " + m.address + " and emails the assistant's reply back to the sender. " + (m.ok ? "Connected." : "Not connected yet: " + (m.error || "checking...")) + " The receiving mail server's own sender check decides whether a sender counts as confirmed, and a reply only goes to a confirmed sender."));
-  else pane.append(el("p", "sub", "Give the shop a mailbox by adding MAIL_USER and MAIL_PASSWORD (an app password) to the server's settings, or point your mail provider's inbound-email webhook at Countersign. Each message arrives with the receiving server's own sender check, which decides whether the sender counts as confirmed. Anything that fails the check is held for you, whatever address it claims."));
+  else pane.append(el("p", "sub", "The shop reads the email sent to one mailbox of yours and writes back. Whoever looks after your server connects it by adding MAIL_USER and MAIL_PASSWORD (an app password from your mail provider) to the server's settings. A mail service that can forward incoming mail can instead be pointed at the address below. The mail server checks who really sent each message, and that check decides whether the sender counts as confirmed. A message that fails it is held for you, whatever address it claims."));
   if (m) {
     const owner_to = (S.settings && S.settings.owner_email) || "the owner";
     pane.append(switchRow("Email " + owner_to + " when a request is waiting for approval", "f-alerts", !S.settings || S.settings.alerts !== false));
@@ -823,14 +823,15 @@ function emailPane(pane) {
   pane.append(el("p", "note", "Replies are written and checked against the audit log before they leave. Send them with your mail provider's outbound API, or review them in the live shop's inbox first."));
 }
 async function paypalPane(pane) {
-  pane.append(el("h3", "t", "PayPal connection"), el("p", "sub", "Countersign talks to PayPal with the REST credentials of your own app. They stay on your server and are never shown here."));
+  pane.append(el("h3", "t", "PayPal connection"), el("p", "sub", "Countersign talks to PayPal using the keys of your own PayPal app. The keys stay on your server and are never shown here."));
   const status = el("div", "conn"), dot = el("i", "dotbig"), txt = el("div"); status.append(dot, txt); pane.append(status);
   txt.textContent = "Checking..."; let c = {}; try { c = await (await fetch("/api/connection")).json(); } catch (e) {}
-  if (c.connected) { dot.classList.add("ok"); txt.replaceChildren(el("b", "", "Connected to the PayPal " + c.environment), el("div", "sub", "App " + (c.app_id || "") + ". The app is allowed to:")); const chips = el("div", "chips"); (c.scopes || []).forEach(s => chips.append(el("span", "chip on", s))); pane.append(chips); }
+  if (c.connected) { dot.classList.add("ok"); txt.replaceChildren(el("b", "", "Connected to PayPal" + (c.environment === "sandbox" ? " (test mode, no real money)" : "")), el("div", "sub", "Refunding customers: " + (c.can_refund ? "allowed" : "not allowed") + ". Paying suppliers: " + (c.can_pay_out ? "allowed" : "not allowed") + "."));
+    const more = document.createElement("details"); more.className = "note"; more.append(el("summary", "", "Technical details")); more.append(el("div", "sub", "App " + (c.app_id || "") + ". Permissions PayPal gave this app:")); const chips = el("div", "chips"); (c.scopes || []).forEach(s => chips.append(el("span", "chip on", s))); more.append(chips); pane.append(more); }
   else if (c.environment === "simulated") { dot.classList.add("bad"); txt.replaceChildren(el("b", "", "Simulated PayPal"), el("div", "sub", c.note)); }
   else { dot.classList.add("bad"); txt.replaceChildren(el("b", "", "Not connected"), el("div", "sub", c.error || "Check the credentials.")); }
   pane.append(el("p", "note", "To connect your own PayPal account, follow the setup guide in the project's README."));
-  pane.append(el("h3", "t", "Does the ledger match PayPal?"), el("p", "sub", "Compares every refund Countersign made with what PayPal's own transaction search shows for the last 30 days. PayPal can take up to three hours to show a transaction, so newer ones are not judged."));
+  pane.append(el("h3", "t", "Does Countersign's record match PayPal?"), el("p", "sub", "Countersign keeps its own record of every refund it made. This compares that record with what PayPal itself shows for the last 30 days, to catch anything that does not agree. PayPal can take up to three hours to show a payment, so anything newer is not judged."));
   const chk = el("button", "btn", "Check against PayPal"), rep = el("div", "recon"); chk.style.marginTop = "12px"; pane.append(chk, rep);
   chk.onclick = async () => {
     chk.disabled = true; rep.replaceChildren(el("p", "sub", "Asking PayPal..."));
@@ -838,16 +839,16 @@ async function paypalPane(pane) {
       const r = await fetch("/api/reconcile", { headers: owner() }), j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(r.status === 401 ? "This needs the owner token. Enter it under the activity table first." : (j.detail || "The check failed."));
       if (j.error) { rep.replaceChildren(el("p", "note", j.message)); return; }
-      const f = j.refunds, lines = [el("p", j.ok ? "sub good" : "sub bad", j.ok ? "Everything Countersign refunded is in PayPal, and PayPal shows nothing it did not do." : "The two do not agree.")];
-      lines.push(el("p", "sub", f.matched + " of " + f.ledger + " refunds are in PayPal. " + f.too_recent_to_judge + " are too recent to judge. " + j.payments.seen_in_paypal + " of " + j.payments.shop_payments + " payments are visible in the search window."));
-      f.missing_in_paypal.forEach(m => lines.push(el("p", "note", "Request " + m.request + ": a refund of $" + m.amount + " on " + m.capture + " is in the ledger but not in PayPal.")));
-      f.made_outside_countersign.forEach(m => lines.push(el("p", "note", "PayPal shows a refund of $" + m.amount + " on " + m.capture + " that Countersign did not make (made in PayPal itself).")));
+      const f = j.refunds, lines = [el("p", j.ok ? "sub good" : "sub bad", j.ok ? "Everything matches: each refund Countersign made is in PayPal, and PayPal shows no refund that Countersign did not make." : "The two do not agree. Details below.")];
+      lines.push(el("p", "sub", f.matched + " of " + f.ledger + " refunds are in PayPal. " + f.too_recent_to_judge + " are too recent to judge. " + j.payments.seen_in_paypal + " of " + j.payments.shop_payments + " of the shop's payments show up in the 30 days checked."));
+      f.missing_in_paypal.forEach(m => lines.push(el("p", "note", "Request " + m.request + ": Countersign recorded a refund of $" + m.amount + " that PayPal does not show.")));
+      f.made_outside_countersign.forEach(m => lines.push(el("p", "note", "PayPal shows a refund of $" + m.amount + " that Countersign did not make. It was probably made in PayPal itself.")));
       rep.replaceChildren(...lines);
     } catch (e) { rep.replaceChildren(el("p", "note", e.message)); } finally { chk.disabled = false; }
   };
   const live = S.state && S.state.paypal;
   if (live) {
-    pane.append(el("h3", "t", "PayPal webhook"), el("p", "sub", "PayPal tells the shop about payments, refunds, disputes and payouts by sending messages to this address. Each one is checked with PayPal before it is believed."));
+    pane.append(el("h3", "t", "PayPal notifications (webhook)"), el("p", "sub", "PayPal tells the shop about payments, refunds, disputes and payouts by sending messages to the address below. Each message is checked with PayPal before it is believed."));
     const wh = el("div", "conn"), wdot = el("i", "dotbig " + (live.webhook ? "ok" : "bad")), wtxt = el("div"); wh.append(wdot, wtxt); pane.append(wh);
     wtxt.append(el("b", "", live.webhook ? "Registered" : "Not registered yet"), el("div", "sub mono", live.webhook_url));
     if (!live.webhook) {

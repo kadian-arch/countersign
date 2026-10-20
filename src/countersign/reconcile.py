@@ -92,7 +92,9 @@ def run(paypal, rows: list[dict], captures: set[str], days: int = 30, now: datet
         if e.status in (401, 403):
             return {"error": "not_enabled", "message": "PayPal does not let this app search transactions. Switch on Transaction Search "
                                                        "under the app's features in the PayPal developer dashboard, then try again."}
-        return {"error": "paypal", "message": f"PayPal could not answer the search ({e.status})."}
+        said = " ".join(x for x in [str((e.body or {}).get("message") or (e.body or {}).get("name") or "")] +
+                        [str(d.get("issue") or d.get("description") or "") for d in (e.body or {}).get("details", []) if isinstance(d, dict)] if x)
+        return {"error": "paypal", "message": f"PayPal could not answer the search ({e.status})" + (f": {said[:240]}" if said else ".")}
     out = compare(rows, transactions, captures, now)
     out["window"] = {"from": stamp(start), "to": stamp(now), "transactions": len(transactions)}
     return out

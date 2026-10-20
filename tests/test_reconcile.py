@@ -81,9 +81,19 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(len(asked), 4)               # two windows, two pages each
         self.assertEqual(len(found), 4)
         self.assertTrue(all("fields=transaction_info" in a and "/v1/reporting/transactions" in a for a in asked))
+        self.assertTrue(all("+" not in a and "%2B0000" in a for a in asked))   # a bare "+" in a web address means a space, and PayPal refuses the date
 
     def test_a_result_with_no_amount_is_skipped_not_a_crash(self):
         self.assertIsNone(reconcile.normalise({"transaction_info": {"transaction_id": "X"}}))
+
+    def test_when_paypal_refuses_for_another_reason_its_own_words_are_passed_on(self):
+        class Refused:
+            def transactions(self, start, end):
+                raise PayPalError(400, {"name": "INVALID_REQUEST", "message": "Request is not well-formed.",
+                                        "details": [{"issue": "INVALID_DATE_FORMAT"}]})
+        out = reconcile.run(Refused(), [], set(), now=NOW)
+        self.assertEqual(out["error"], "paypal")
+        self.assertIn("Request is not well-formed. INVALID_DATE_FORMAT", out["message"])
 
     def test_an_app_without_transaction_search_is_told_how_to_switch_it_on(self):
         class Refused:

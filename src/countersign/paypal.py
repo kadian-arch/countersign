@@ -2,6 +2,7 @@ import base64
 import json
 import time
 import uuid
+from urllib.parse import urlencode
 from decimal import Decimal
 
 import httpx
@@ -108,8 +109,9 @@ class PayPal:
         for a, b in reconcile.windows(start, end):
             page = 1
             while True:
-                body = self.request("GET", f"/v1/reporting/transactions?start_date={reconcile.stamp(a)}&end_date={reconcile.stamp(b)}"
-                                           f"&fields=transaction_info&page_size=100&page={page}")
+                query = urlencode({"start_date": reconcile.stamp(a), "end_date": reconcile.stamp(b), "fields": "transaction_info",
+                                   "page_size": 100, "page": page})   # encoded: a bare "+" in a date would read as a space
+                body = self.request("GET", f"/v1/reporting/transactions?{query}")
                 found += [t for t in map(reconcile.normalise, body.get("transaction_details", [])) if t]
                 if page >= int(body.get("total_pages") or 1):
                     break

@@ -43,6 +43,7 @@ export const initialState = (size: Size = "desktop") => ({
       events: { type: "value", dataMapping: { value: [{ id: "events.kind", aggregation: "count" }] }, format: title("PayPal events") },
       byOutcome: filter("actions.outcome", "Outcome"),
       byKind: filter("actions.kind", "Kind"),
+      search: { type: "search", dataMapping: { value: [{ id: "actions.requested_by" }] }, format: title("Search who asked") },
       ribbon: { type: "verdict-ribbon", dataMapping: { category: [{ id: "actions.outcome" }], value: [{ id: "actions.id", aggregation: "count" }] }, format: title("What happened to each request") },
       reasons: { type: "bar-chart-grouped", dataMapping: { categoryKey: [{ id: "reasons.reason" }], valueKey: [{ id: "reasons.count", aggregation: "sum" }] }, format: title("Which rules fired") },
       perDay: { type: "column-chart-grouped", dataMapping: { categoryKey: [{ id: "actions.day" }], valueKey: [{ id: "actions.stopped", aggregation: "sum" }, { id: "actions.lost", aggregation: "sum" }] }, format: title("Money stopped and lost, by day") },
@@ -53,7 +54,7 @@ export const initialState = (size: Size = "desktop") => ({
       },
     }, [
       { h: 4, ids: ["lost", "stopped", "requests", "events"] },
-      { h: 3, ids: ["byOutcome", "byKind"] },
+      { h: 5, ids: ["byOutcome", "byKind", "search"] },
       { h: 5, ids: ["ribbon"] },
       { h: 9, ids: ["reasons", "perDay"] },
       { h: 12, ids: ["table"] },
@@ -65,6 +66,7 @@ export const initialState = (size: Size = "desktop") => ({
       emails: { type: "value", dataMapping: { value: [{ id: "runs.email", aggregation: "count" }] }, format: title("Emails judged") },
       byInboxFilter: filter("runs.inbox", "Inbox"),
       byKindFilter: filter("runs.kind", "Kind of email"),
+      searchRuns: { type: "search", dataMapping: { value: [{ id: "runs.subject" }] }, format: title("Search the emails") },
       without: { type: "verdict-ribbon", dataMapping: { category: [{ id: "runs.without_outcome" }], value: [{ id: "runs.email", aggregation: "count" }] }, format: title("The agent wired straight to PayPal") },
       withIt: { type: "verdict-ribbon", dataMapping: { category: [{ id: "runs.with_outcome" }], value: [{ id: "runs.email", aggregation: "count" }] }, format: title("The same agent through Countersign") },
       byInbox: { type: "column-chart-grouped", dataMapping: { categoryKey: [{ id: "runs.inbox" }], valueKey: [{ id: "runs.lost_without", aggregation: "sum" }, { id: "runs.lost_with", aggregation: "sum" }] }, format: title("Money lost, by inbox") },
@@ -76,7 +78,7 @@ export const initialState = (size: Size = "desktop") => ({
       },
     }, [
       { h: 4, ids: ["lostWithout", "lostWith", "leaked", "emails"] },
-      { h: 3, ids: ["byInboxFilter", "byKindFilter"] },
+      { h: 5, ids: ["byInboxFilter", "byKindFilter", "searchRuns"] },
       { h: 6, ids: ["without", "withIt"] },
       { h: 9, ids: ["byInbox", "byModel"] },
       { h: 12, ids: ["attacks"] },
