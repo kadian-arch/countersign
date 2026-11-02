@@ -3,7 +3,7 @@ import type { AgDataSourcesDefinition } from "ag-studio";
 // what /api/analytics returns (see Workspace.analytics in web.py)
 export interface Analytics {
   actions: Record<string, any>[];
-  reasons: { reason: string; count: number }[];
+  reasons: { reason: string; count: number }[];   // the server's own tally, no longer charted: the dashboard builds it per request
   events: Record<string, any>[];
   orders: Record<string, any>[];
   shop: string;
@@ -50,7 +50,7 @@ export function sources(a: Analytics, runs: RunRow[]): AgDataSourcesDefinition {
           { id: "reason_text", name: "Why", format: "textFormat" },
           { id: "paypal_ref", name: "PayPal reference", format: "textFormat" },
           { id: "lost", name: "Money lost", description: "Dollars that left the shop because the guard let through a request it should not have", ...money },
-          { id: "stopped", name: "Money stopped", description: "Dollars Countersign kept from leaving: held and then refused, declined by the owner, or blocked", ...money },
+          { id: "stopped", name: "Money stopped", description: "Dollars a bad request would have cost, that Countersign kept from leaving: blocked, or held and then declined by the owner. A held request that was in fact fine is not counted", ...money },
           { id: "approved", name: "Approved by the owner", description: "Dollars the guard held and the owner then approved. The owner's own decision, so not counted as lost", ...money },
         ],
       },
@@ -71,9 +71,10 @@ export function sources(a: Analytics, runs: RunRow[]): AgDataSourcesDefinition {
         ],
       },
       {
-        id: "reasons", name: "Reasons", description: "How many times each rule fired.",
-        data: a.reasons,
-        fields: [{ id: "reason", name: "Rule", format: "textFormat" }, { id: "count", name: "Times", format: "integerFormat" }],
+        // one row for each rule that fired on each request, linked to the request below, so a filter on the requests narrows these too
+        id: "reasons", name: "Rules that fired", description: "Each time a rule fired on a request. One request can trip several rules.",
+        data: reasonRows(a.actions),
+        fields: [{ id: "action_id", name: "Request", format: "integerFormat" }, { id: "reason", name: "Rule", format: "textFormat" }],
       },
       {
         id: "events", name: "PayPal events", description: "What PayPal reported back by webhook.",
@@ -85,5 +86,37 @@ export function sources(a: Analytics, runs: RunRow[]): AgDataSourcesDefinition {
         ],
       },
     ],
-  } as AgDataSourcesDefinition;
+    relationships: [
+      { id: "rules_of_request", source: { tableId: "reasons", fieldId: "action_id" }, target: { tableId: "actions", fieldId: "id" }, type: "many-to-one" },
+    ],
+    // fields the data itself does not carry, worked out by Studio's expression engine from the ones it does
+    expressions: [
+      {
+        id: "at_risk", name: "Money at risk", isMeasure: false, format: "currencyFormat",
+        description: "What the request would have cost the shop had it run and been wrong: lost, stopped or approved by the owner",
+        expression: { operator: "add", inputs: [{ operator: "add", inputs: [{ id: "actions.lost" }, { id: "actions.stopped" }] }, { id: "actions.approved" }] },
+      },
+      {
+        id: "stopped_share", name: "Share of risky money stopped", isMeasure: true, format: "percentageFormat",
+        description: "Of the money that a bad request put at risk, the share Countersign stopped (stopped, divided by stopped plus lost)",
+        expression: {
+          operator: "divide",
+          inputs: [
+            { id: "actions.stopped", aggregation: "sum" },
+            { operator: "add", inputs: [{ id: "actions.stopped", aggregation: "sum" }, { id: "actions.lost", aggregation: "sum" }] },
+          ],
+        },
+      },
+      {
+        id: "saved", name: "Money saved", isMeasure: false, format: "currencyFormat",
+        description: "In a recorded run, what the agent lost wired straight to PayPal minus what it lost through Countersign",
+        expression: { operator: "subtract", inputs: [{ id: "runs.lost_without" }, { id: "runs.lost_with" }] },
+      },
+    ],
+  } as unknown as AgDataSourcesDefinition;
+}
+
+// a request's reason codes are kept as one text ("over_limit, no_refund_request"); the rules chart needs one row for each
+export function reasonRows(actions: Record<string, any>[]): { action_id: number; reason: string }[] {
+  return actions.flatMap((r) => (r.reasons && r.reasons !== "none" ? String(r.reasons).split(", ") : []).map((reason) => ({ action_id: r.id as number, reason })));
 }

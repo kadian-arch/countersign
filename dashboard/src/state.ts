@@ -45,7 +45,13 @@ export const initialState = (size: Size = "desktop") => ({
       byKind: filter("actions.kind", "Kind"),
       search: { type: "search", dataMapping: { value: [{ id: "actions.requested_by" }] }, format: title("Search who asked") },
       ribbon: { type: "verdict-ribbon", dataMapping: { category: [{ id: "actions.outcome" }], value: [{ id: "actions.id", aggregation: "count" }] }, format: title("What happened to each request") },
-      reasons: { type: "bar-chart-grouped", dataMapping: { categoryKey: [{ id: "reasons.reason" }], valueKey: [{ id: "reasons.count", aggregation: "sum" }] }, format: title("Which rules fired (all requests)") },
+      share: { type: "radial-gauge", dataMapping: { value: [{ id: "stopped_share" }] }, format: { ...title("Share of risky money stopped"), style: { scaleLabel: { enabled: true, min: 0, max: 1 } } } },
+      reasons: { type: "bar-chart-grouped", dataMapping: { categoryKey: [{ id: "reasons.reason" }], valueKey: [{ id: "reasons.action_id", aggregation: "count" }] }, format: title("Which rules fired") },
+      rulesByOutcome: {
+        type: "pivot-grid",
+        dataMapping: { rows: [{ id: "reasons.reason" }], columns: [{ id: "actions.outcome" }], values: [{ id: "reasons.action_id", aggregation: "count" }] },
+        format: title("Which rule led to which outcome"),
+      },
       perDay: { type: "column-chart-grouped", dataMapping: { categoryKey: [{ id: "actions.day" }], valueKey: [{ id: "actions.stopped", aggregation: "sum" }, { id: "actions.lost", aggregation: "sum" }] }, format: title("Money stopped and lost, by day") },
       table: {
         type: "grid",
@@ -55,8 +61,9 @@ export const initialState = (size: Size = "desktop") => ({
     }, [
       { h: 4, ids: ["lost", "stopped", "approved", "requests"] },
       { h: 5, ids: ["byOutcome", "byKind", "search"] },
-      { h: 5, ids: ["ribbon"] },
+      { h: 7, ids: ["ribbon", "share"] },
       { h: 9, ids: ["reasons", "perDay"] },
+      { h: 8, ids: ["rulesByOutcome"] },
       { h: 12, ids: ["table"] },
     ]),
     page("Recorded runs", size, {
@@ -73,7 +80,7 @@ export const initialState = (size: Size = "desktop") => ({
       byModel: { type: "bar-chart-grouped", dataMapping: { categoryKey: [{ id: "runs.model" }], valueKey: [{ id: "runs.lost_without", aggregation: "sum" }, { id: "runs.lost_with", aggregation: "sum" }] }, format: title("Money lost, by model") },
       attacks: {
         type: "grid",
-        dataMapping: { cols: ["runs.inbox", "runs.model", "runs.email", "runs.kind", "runs.subject", "runs.note", "runs.without_outcome", "runs.with_outcome", "runs.lost_without", "runs.lost_with"].map((id) => ({ id })) },
+        dataMapping: { cols: ["runs.inbox", "runs.model", "runs.email", "runs.kind", "runs.subject", "runs.note", "runs.without_outcome", "runs.with_outcome", "runs.lost_without", "runs.lost_with", "saved"].map((id) => ({ id })) },
         format: title("Every email in every run"),
       },
     }, [

@@ -26,8 +26,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-grid.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-theme-quartz.css">
 <style>
 @property --ang { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
 :root {
@@ -220,7 +218,10 @@ section.block { padding: 60px 0 6px; scroll-margin-top: 72px; }
 .qitem { padding: 14px 15px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--hold) 38%, transparent); background: var(--hold-soft); margin-bottom: 10px; animation: slidein .45s both; }
 .qitem .what { font-weight: 700; margin-bottom: 3px; } .qitem .why { color: var(--muted); font-size: 13.5px; margin-bottom: 10px; } .qitem .acts { display: flex; gap: 8px; }
 #grid { height: 330px; width: 100%; border-radius: 12px; overflow: hidden; }
-.ag-theme-quartz, .ag-theme-quartz-dark { --ag-background-color: transparent; --ag-foreground-color: var(--ink); --ag-header-background-color: var(--glass2); --ag-odd-row-background-color: transparent; --ag-border-color: var(--line); --ag-header-foreground-color: var(--muted); --ag-font-family: var(--body); --ag-row-hover-color: var(--glass2); --ag-wrapper-border-radius: 12px; }
+.gridbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 12px; }
+.gridbar input { flex: 1; min-width: 180px; }
+.gridbar .count { color: var(--muted); font-size: 13px; }
+#grid .ag-row.row-hold { box-shadow: inset 3px 0 0 var(--hold); } #grid .ag-row.row-block { box-shadow: inset 3px 0 0 var(--refuse); } #grid .ag-row.row-allow { box-shadow: inset 3px 0 0 var(--allow); }
 .badge { padding: 2px 10px; border-radius: 99px; font: 600 12px var(--mono); }
 .badge.allow, .badge.executed { color: var(--allow); background: var(--allow-soft); } .badge.hold, .badge.pending { color: var(--hold); background: var(--hold-soft); }
 .badge.block, .badge.blocked, .badge.rejected, .badge.failed { color: var(--refuse); background: var(--refuse-soft); }
@@ -396,7 +397,9 @@ footer .base { display: flex; flex-wrap: wrap; justify-content: space-between; g
         <div class="card pad"><h3 class="t">Waiting for you</h3><p class="sub">The guard holds anything it will not run by itself. Approving re-runs the guard first.</p>
           <div id="tokenrow" class="hidden"><label for="token">Owner token</label><input id="token" type="password" autocomplete="off"></div><div id="queue"></div></div>
         <div class="card pad hidden" id="pp"><h3 class="t">Told by PayPal</h3><p class="sub" id="ppsub"></p><div id="ppfeed"></div></div>
-        <div class="card pad"><h3 class="t">Activity</h3><p class="sub">Every refund and payment attempted, with the guard's verdict.</p><div id="grid"></div><p class="ledgerline" id="ledger"></p>
+        <div class="card pad"><h3 class="t">Activity</h3><p class="sub">Every refund and payment attempted, with the guard's verdict.</p>
+        <div class="gridbar"><input id="gridq" type="search" placeholder="Search the activity: a name, an amount, a reason" aria-label="Search the activity"><span class="count" id="gridcount" aria-live="polite"></span><button class="btn small" id="gridcsv" type="button">Download as CSV</button></div>
+        <div id="grid"></div><p class="ledgerline" id="ledger"></p>
           <div class="visitors" id="visitors"></div><div class="cta" style="margin-top:12px"><button class="btn small" id="reset">Start this shop over</button></div><p class="note" id="resetnote"></p></div>
       </div>
     </div>
@@ -589,18 +592,37 @@ function renderQueue(pending) {
   });
 }
 let grid = null;
-window.setGridTheme = () => { $("grid").className = document.documentElement.dataset.theme === "light" ? "ag-theme-quartz" : "ag-theme-quartz-dark"; };
+// The grid is AG Grid, themed with its Theming API in the page's own colours (the same tokens the CSS uses, so the light and dark
+// switch recolours it with everything else).
+const gridTheme = () => {
+  const light = document.documentElement.dataset.theme === "light";
+  return agGrid.themeQuartz.withPart(light ? agGrid.colorSchemeLight : agGrid.colorSchemeDark).withParams({
+    backgroundColor: "transparent", foregroundColor: "var(--ink)", headerBackgroundColor: "var(--glass2)", headerTextColor: "var(--muted)",
+    borderColor: "var(--line)", fontFamily: "var(--body)", rowHoverColor: "var(--glass2)", wrapperBorderRadius: 12, accentColor: "var(--a1)",
+    oddRowBackgroundColor: "transparent", fontSize: 14, headerFontWeight: 600,
+  });
+};
+window.setGridTheme = () => { if (grid) grid.setGridOption("theme", gridTheme()); };
 function renderGrid(rows) {
-  const data = rows.map(a => ({ id: a.id, when: a.ts ? new Date(a.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "", what: describe(a), from: a.sender || "owner", verdict: a.verdict, status: a.status, why: (a.reasons || []).map(r => r.code).join(", "), ref: a.paypal_ref || "" }));
+  const data = rows.map(a => ({ id: a.id, when: a.ts ? new Date(a.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "", what: describe(a), from: a.sender || "owner", verdict: a.verdict, status: a.status,
+    why: (a.reasons || []).map(r => r.code).join(", "), explanation: (a.reasons || []).map(r => r.message).join(" "), ref: a.paypal_ref || "" }));
   if (!window.agGrid) return;
-  setGridTheme();
-  const badge = p => el("span", "badge " + p.value, p.value);
-  if (!grid) grid = agGrid.createGrid($("grid"), {
-    columnDefs: [{ field: "id", width: 70, sort: "desc" }, { field: "when", width: 90 }, { field: "what", flex: 2, minWidth: 240 }, { field: "from", flex: 1, minWidth: 160 },
-      { field: "verdict", width: 100, cellRenderer: badge }, { field: "status", width: 110, cellRenderer: badge }, { field: "why", flex: 1, minWidth: 150 },
-      { headerName: "PayPal reference", field: "ref", width: 170 }],
-    defaultColDef: { sortable: true, resizable: true }, rowData: data, animateRows: true, getRowId: p => String(p.data.id), overlayNoRowsTemplate: "Nothing has been tried yet." });
-  else grid.setGridOption("rowData", data);
+  const badge = p => p.value ? el("span", "badge " + p.value, p.value) : "";
+  if (!grid) {
+    grid = agGrid.createGrid($("grid"), {
+      theme: gridTheme(),
+      columnDefs: [{ headerName: "No.", field: "id", width: 80, sort: "desc" }, { field: "when", width: 104 }, { field: "what", flex: 2, minWidth: 240, tooltipField: "what" },
+        { field: "from", flex: 1, minWidth: 160, filter: true }, { field: "verdict", width: 124, cellRenderer: badge, filter: true }, { field: "status", width: 130, cellRenderer: badge, filter: true },
+        { headerName: "Why", field: "why", flex: 1, minWidth: 160, tooltipField: "explanation", filter: true }, { headerName: "PayPal reference", field: "ref", width: 170 },
+        { field: "explanation", hide: true }],
+      defaultColDef: { sortable: true, resizable: true }, tooltipShowDelay: 300,
+      rowClassRules: { "row-hold": p => p.data.verdict === "hold", "row-block": p => p.data.verdict === "block", "row-allow": p => p.data.verdict === "allow" },
+      rowData: data, animateRows: true, getRowId: p => String(p.data.id), overlayNoRowsTemplate: "Nothing has been tried yet.",
+      onModelUpdated: e => { const n = e.api.getDisplayedRowCount(), all = e.api.getGridOption("rowData").length; $("gridcount").textContent = n === all ? all + (all === 1 ? " request" : " requests") : n + " of " + all; },
+    });
+    $("gridq").addEventListener("input", e => grid.setGridOption("quickFilterText", e.target.value));
+    $("gridcsv").addEventListener("click", () => grid.exportDataAsCsv({ fileName: "countersign-activity.csv", columnKeys: ["id", "when", "what", "from", "verdict", "status", "why", "explanation", "ref"] }));
+  } else grid.setGridOption("rowData", data);
 }
 function apply(s) {
   const first = !S.state; S.state = s;

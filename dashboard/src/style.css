@@ -21,5 +21,12 @@ body { margin: 0; background: #04050d; color: #f0f2ff; font-family: "Figtree", "
   .bar .tabs { flex-basis: 100%; order: 5; }
   .strip { font-size: 13px; }
 }
+/* "Print report": only the dashboard is printed, on one landscape page, with the page's own dark background kept */
+@page { size: A4 landscape; margin: 10mm; }
+@media print {
+  .bar, .strip { display: none !important; }
+  body, html, #root { background: #04050d !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .frame { height: auto; }
+}
 .bar .ghost { background: transparent; border-color: #8c9eff40; color: #a3acd6; }
 .bar button:disabled { opacity: .6; cursor: default; }

@@ -8,6 +8,7 @@ import { load, loadRuns, sources, type Analytics, type RunRow } from "./data";
 import { Loader } from "./Loader";
 import { initialState, type Size } from "./state";
 import { darkTheme } from "./theme";
+import { toolDisplay } from "./toolDisplay";
 import { widgets } from "./widgets";
 
 // What a screen can hold. A phone shows the dashboard alone, stacked. A tablet shows the whole page and no side
@@ -82,6 +83,7 @@ export function App() {
           </nav>
           <span className="dim">what the agent asked for, and what Countersign decided</span>
           <button className="ghost" onClick={refresh} disabled={refreshing} title="Load the shop's latest numbers">{refreshing ? "Refreshing" : "Refresh"}</button>
+          <button className="ghost" onClick={() => window.print()} title="Print this page, or save it as a PDF to send to someone">Print report</button>
           {canEdit && (
             <button onClick={() => setMode(mode === "view" ? "edit" : "view")}>
               {mode === "view" ? "Edit and ask the assistant" : "Done editing"}
@@ -95,7 +97,7 @@ export function App() {
           </p>
         )}
         <AgStudio key={`${size}-${version}`} style={{ flex: 1, minHeight: 0 }} mode={canEdit ? mode : "view"} theme={darkTheme} panels={PANELS[size] as never}
-          data={definition} widgets={widgets as never} initialState={start} ai={ai as never}
+          data={definition} widgets={widgets as never} initialState={start} ai={ai as never} aiToolDisplay={toolDisplay as never}
           onApiReady={(e: { api: AgStudioApi }) => { setApi(e.api); setPage(e.api.getState().selectedPageId); }}
           onStateUpdated={() => { if (api) { const p = api.getState().selectedPageId; setPage(p); lastPage.current = p; } }} />
       </div>
