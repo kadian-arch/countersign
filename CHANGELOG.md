@@ -14,6 +14,9 @@
 - The dashboard now links each rule that fired to its request, so "Which rules fired" and a new pivot table (rule by outcome) follow the search box and the filters. New calculated fields (money at risk, share of risky money stopped, money saved), a radial gauge, a "Print report" button, and the assistant's tool calls show in plain words and open to the rows they returned. The money-stopped tile says a held request that was in fact fine is not counted.
 - The activity table on the main page uses AG Grid's Theming API in the page's colours, with a quick filter, column filters, tooltips with the full reason, a colour stripe by verdict and "Download as CSV". `docs/ag-grid-and-studio.md` lists every AG Studio and AG Grid feature used.
 
+- A nightly check: a Render cron job (`render.yaml`, `scripts/nightly_check.py`) asks the shop to compare its refunds with PayPal's Transaction Search every night, the Setup page shows the last result, and the owner is emailed only if the records really disagree (`POST /api/nightly`, owner only).
+- A Postman collection of the whole API with examples that adapt to the shop's own orders and invoices, and tests (`docs/postman/`, rewritten by `scripts/export_postman.py`; a test keeps it in step with the routes).
+
 - Fixed: the ledger check sent its dates with a bare "+", which a web address reads as a space, so PayPal refused the search with a 400. The dates are now encoded, and when PayPal refuses for another reason its own words are shown.
 - The dashboard has a search box (a custom widget) on both pages, and the filter buttons have room to show their choices.
 - The Setup page is in plainer words: the PayPal connection says what the app may do (refund, pay suppliers) with the technical permission list folded away, the ledger check and the webhook are explained without jargon.

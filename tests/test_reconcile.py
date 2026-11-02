@@ -121,5 +121,75 @@ class RouteTests(unittest.TestCase):
             self.assertEqual(c.get("/api/reconcile", headers={"X-Owner-Token": "secret"}).status_code, 200)
 
 
+class SummaryTests(unittest.TestCase):
+    CAPTURES = {"CAP1", "CAP2"}
+
+    def test_a_clean_check_says_everything_matches(self):
+        out = reconcile.compare([row(1, "CAP1", "9.50")], [payment("CAP1"), refund("CAP1", "9.50")], self.CAPTURES, NOW)
+        self.assertTrue(reconcile.summarise(out).startswith("Everything matches"))
+        self.assertIn("1 of 1 refunds are in PayPal", reconcile.summarise(out))
+
+    def test_a_difference_is_counted_in_words(self):
+        out = reconcile.compare([row(1, "CAP1", "9.50")], [refund("CAP2", "20.00")], self.CAPTURES, NOW)
+        said = reconcile.summarise(out)
+        self.assertIn("1 refund Countersign recorded that PayPal does not show and 1 refund in PayPal that Countersign did not make", said)
+
+    def test_paypal_not_answering_is_passed_on_as_it_was_said(self):
+        self.assertEqual(reconcile.summarise({"error": "paypal", "message": "PayPal could not answer the search (500)."}), "PayPal could not answer the search (500).")
+
+
+class NightlyTests(unittest.TestCase):
+    OWNER = {"X-Owner-Token": "secret"}
+
+    def app(self):
+        from tests.test_web import backend
+        return create_app("live", owner_token="secret", llm=None, live_backend=backend, seeder=lambda ws: None)
+
+    def test_only_the_owner_can_start_it(self):
+        with TestClient(self.app()) as c:
+            self.assertEqual(c.post("/api/nightly").status_code, 401)
+
+    def test_a_clean_night_is_kept_for_the_setup_page_and_nobody_is_emailed(self):
+        from unittest import mock
+        with TestClient(self.app()) as c:
+            ws = c.app.state.hub.live
+            with mock.patch.object(ws, "tell_owner") as told:
+                out = c.post("/api/nightly", headers=self.OWNER).json()
+            self.assertIs(out["ok"], True)
+            told.assert_not_called()
+            kept = c.get("/api/state").json()["nightly"]
+            self.assertEqual((kept["ok"], kept["text"]), (True, out["text"]))
+
+    def test_a_difference_emails_the_owner_once_and_is_kept(self):
+        from unittest import mock
+        bad = {"refunds": {"ledger": 1, "matched": 0, "missing_in_paypal": [{"request": 1, "capture": "C", "amount": "9.50"}],
+                           "too_recent_to_judge": 0, "made_outside_countersign": []},
+               "payments": {"shop_payments": 1, "seen_in_paypal": 1}, "ok": False}
+        with TestClient(self.app()) as c:
+            ws = c.app.state.hub.live
+            with mock.patch.object(ws, "ledger_check", return_value=bad), mock.patch.object(ws, "tell_owner") as told:
+                out = c.post("/api/nightly", headers=self.OWNER).json()
+            self.assertIs(out["ok"], False)
+            told.assert_called_once()
+            self.assertEqual(told.call_args[0][1], {"kind": "ledger_mismatch"})
+            self.assertFalse(c.get("/api/state").json()["nightly"]["ok"])
+
+    def test_paypal_not_answering_is_kept_but_does_not_email_the_owner(self):
+        from unittest import mock
+        with TestClient(self.app()) as c:
+            ws = c.app.state.hub.live
+            down = {"error": "paypal", "message": "PayPal could not answer the search (503)."}
+            with mock.patch.object(ws, "ledger_check", return_value=down), mock.patch.object(ws, "tell_owner") as told:
+                out = c.post("/api/nightly", headers=self.OWNER).json()
+            self.assertIsNone(out["ok"])
+            told.assert_not_called()
+
+    def test_the_email_for_a_difference_says_what_to_do(self):
+        from countersign import alerts
+        subject, text, html = alerts.compose_notice("Mill Street Coffee Roasters", "The two do not agree.", {"kind": "ledger_mismatch"}, "https://shop.example/#shop")
+        self.assertEqual(subject, "The nightly check found a difference")
+        self.assertIn("Check against PayPal", text)
+
+
 if __name__ == "__main__":
     unittest.main()

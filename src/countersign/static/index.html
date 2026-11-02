@@ -882,6 +882,8 @@ async function paypalPane(pane) {
   else { dot.classList.add("bad"); txt.replaceChildren(el("b", "", "Not connected"), el("div", "sub", c.error || "Check the credentials.")); }
   pane.append(el("p", "note", "To connect your own PayPal account, follow the setup guide in the project's README."));
   pane.append(el("h3", "t", "Does Countersign's record match PayPal?"), el("p", "sub", "Countersign keeps its own record of every refund it made. This compares that record with what PayPal itself shows for the last 30 days, to catch anything that does not agree. PayPal can take up to three hours to show a payment, so anything newer is not judged."));
+  const night = S.state && S.state.nightly;
+  if (night) pane.append(el("p", "sub " + (night.ok === false ? "bad" : night.ok ? "good" : ""), "The same check runs by itself every night. Last run " + new Date(night.at * 1000).toLocaleString() + ": " + night.text));
   const chk = el("button", "btn", "Check against PayPal"), rep = el("div", "recon"); chk.style.marginTop = "12px"; pane.append(chk, rep);
   chk.onclick = async () => {
     chk.disabled = true; rep.replaceChildren(el("p", "sub", "Asking PayPal..."));

@@ -593,6 +593,35 @@ class Workspace:
             except Exception as e:
                 self._noted(False, str(e)[:80])
 
+    # ---- does the record match PayPal
+
+    def ledger_check(self) -> dict:
+        """The ledger against PayPal's Transaction Search for the last month: what the Setup button and the nightly job both run."""
+        paypal = self.paypal or self.sim.paypal
+        with self.lock:
+            rows = self.ledger.recent(1000)
+            captures = {o["capture_id"] for o in self.store.orders() if o["capture_id"]}
+        return reconcile.run(paypal, rows, captures)
+
+    def nightly_check(self) -> dict:
+        """What the scheduled job calls. It keeps the outcome where the Setup page can show it, and emails the owner only when the two
+        records really disagree. PayPal not answering is kept as the outcome too, but is not a reason to wake anyone."""
+        result = self.ledger_check()
+        text = reconcile.summarise(result)
+        ok = None if result.get("error") else bool(result["ok"])
+        with self.lock:
+            self.store.set_setting("nightly", json.dumps({"at": time.time(), "ok": ok, "text": text}))
+            self.bump()
+        if ok is False:
+            self.tell_owner(text, {"kind": "ledger_mismatch"})
+        return {"ok": ok, "text": text}
+
+    def _nightly(self) -> dict | None:
+        try:
+            return json.loads(self.store.get_setting("nightly", "null"))
+        except ValueError:
+            return None
+
     # ---- what PayPal reports
 
     def paypal_event(self, event: dict) -> bool:
@@ -818,7 +847,7 @@ class Workspace:
                    "agent": self.hub.llm is not None,
                    "mailbox": ({**self.hub.mailer.public(), "alerts": self.profile.alerts and bool(self.hub.owner_token)}
                                if self.kind == "live" and self.hub.mailer else None),
-                   "cast": self.cast(), "revealed": reveal,
+                   "cast": self.cast(), "revealed": reveal, "nightly": self._nightly(),
                    "paypal": ({"webhook": bool(self.hub.webhook_id), "webhook_url": self.hub.public_url + "/api/paypal/webhook",
                               "events": self.store.events(12)} if self.kind == "live" else None),
                    "catalog": [{"key": k, "name": n, "price": str(p)} for k, (n, p) in demo.PRODUCTS.items()]}
@@ -1163,11 +1192,13 @@ def create_app(mode: str | None = None, owner_token: str | None = None, llm="aut
     async def reconcile_ledger(ws: Workspace = Depends(shop), x_owner_token: str | None = Header(None)):
         """Compares the ledger with what PayPal's Transaction Search shows for the last month."""
         hub.owner_only(x_owner_token, ws.kind)
-        paypal = ws.paypal or ws.sim.paypal
-        with ws.lock:
-            rows = ws.ledger.recent(1000)
-            captures = {o["capture_id"] for o in ws.store.orders() if o["capture_id"]}
-        return await asyncio.to_thread(reconcile.run, paypal, rows, captures)
+        return await asyncio.to_thread(ws.ledger_check)
+
+    @app.post("/api/nightly")
+    async def nightly(ws: Workspace = Depends(shop), x_owner_token: str | None = Header(None)):
+        """The scheduled job's call (scripts/nightly_check.py, a Render cron job): checks the ledger against PayPal and keeps the outcome."""
+        hub.owner_only(x_owner_token, ws.kind)
+        return await asyncio.to_thread(ws.nightly_check)
 
     @app.post("/api/paypal/webhook/register")
     async def register_webhook(x_owner_token: str | None = Header(None)):

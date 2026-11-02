@@ -44,3 +44,18 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
+  # Every night the shop compares its own record of the refunds with what PayPal's Transaction Search shows, and emails the owner
+  # only if they disagree. The job just makes the call (scripts/nightly_check.py uses only the standard library), so it builds nothing.
+  # A run that finds a difference ends with an error, which Render shows as a failed run.
+  - type: cron
+    name: countersign-nightly-check
+    runtime: python
+    plan: starter
+    schedule: "0 3 * * *"
+    buildCommand: "echo nothing to build"
+    startCommand: python scripts/nightly_check.py
+    envVars:
+      - key: PUBLIC_URL
+        sync: false
+      - key: OWNER_TOKEN
+        sync: false

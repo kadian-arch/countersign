@@ -80,6 +80,25 @@ def compare(rows: list[dict], transactions: list[dict], captures: set[str], now:
             "ok": not missing and not outside}
 
 
+def summarise(result: dict) -> str:
+    """What a check found, in a sentence or two, for the owner's email and for the Setup page."""
+    if result.get("error"):
+        return str(result.get("message") or "PayPal could not be asked.")
+    f = result["refunds"]
+    if result["ok"]:
+        head = "Everything matches: each refund Countersign made is in PayPal, and PayPal shows no refund that Countersign did not make."
+    else:
+        found = []
+        if f["missing_in_paypal"]:
+            n = len(f["missing_in_paypal"])
+            found.append(f"{n} refund{'s' if n != 1 else ''} Countersign recorded that PayPal does not show")
+        if f["made_outside_countersign"]:
+            n = len(f["made_outside_countersign"])
+            found.append(f"{n} refund{'s' if n != 1 else ''} in PayPal that Countersign did not make")
+        head = "The two do not agree: " + " and ".join(found) + "."
+    return f"{head} {f['matched']} of {f['ledger']} refunds are in PayPal ({f['too_recent_to_judge']} too recent to judge)."
+
+
 def run(paypal, rows: list[dict], captures: set[str], days: int = 30, now: datetime | None = None) -> dict:
     """Asks PayPal for the last `days` days and compares. PayPal refuses the search for an app that does not have
     Transaction Search switched on, which is reported as such rather than as a mismatch."""

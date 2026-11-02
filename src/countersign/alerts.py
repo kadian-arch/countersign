@@ -152,6 +152,9 @@ _NOTICES = {
     "payout_trouble": ("A payment to a supplier is stuck", "A payout is held or waiting to be claimed.", "#d99a00",
                        ["Held or unclaimed money can still arrive, so the invoice was left as paid.",
                         "If it stays like this, ask the supplier to claim it or check the address."]),
+    "ledger_mismatch": ("The nightly check found a difference", "Countersign compared its own record of the refunds with what PayPal shows, and they do not agree.",
+                        "#d93f5c", ["Open the shop's Setup page and press Check against PayPal to see which refunds differ.",
+                                    "A refund PayPal shows that Countersign did not make was made in PayPal itself. If it was not you, change the PayPal password and rotate the app's credentials."]),
     "payout_batch": ("A payout batch needs a look", "PayPal reported a problem with a batch of payouts.", "#d99a00",
                      ["Open the payouts in PayPal to see which payment is affected."]),
 }
