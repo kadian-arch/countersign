@@ -5,14 +5,15 @@ export type Size = "phone" | "tablet" | "desktop";
 const title = (text: string) => ({ title: { enabled: true, text } });
 
 type Slot = { xTrack: number; yTrack: number; xSpan: number; ySpan: number };
-type Row = { h: number; ids: string[] };
+type Row = { h: number; ids: string[]; small?: number };   // small: the height on a phone or tablet, where a widget is narrower and needs more room
 
 // Rows of widgets across a 24-column page. A row's widgets share its width equally. On a phone a row of tiles becomes
 // two to a line and every other row's widgets stack one under another, so the same dashboard fits any width.
 function grid(rows: Row[], size: Size): Record<string, Slot> {
   const out: Record<string, Slot> = {};
   let y = 0;
-  for (const { h, ids } of rows) {
+  for (const { h: wide, ids, small } of rows) {
+    const h = size !== "desktop" && small ? small : wide;
     const lines = size === "phone" ? (ids.length === 4 ? [ids.slice(0, 2), ids.slice(2)] : ids.map((id) => [id])) : [ids];
     for (const line of lines) {
       const span = 24 / line.length;
@@ -60,11 +61,11 @@ export const initialState = (size: Size = "desktop") => ({
       },
     }, [
       { h: 4, ids: ["lost", "stopped", "approved", "requests"] },
-      { h: 5, ids: ["byOutcome", "byKind", "search"] },
+      { h: 5, small: 9, ids: ["byOutcome", "byKind", "search"] },
       { h: 7, ids: ["ribbon", "share"] },
       { h: 9, ids: ["reasons", "perDay"] },
       { h: 8, ids: ["rulesByOutcome"] },
-      { h: 12, ids: ["table"] },
+      { h: 12, small: 18, ids: ["table"] },
     ]),
     page("Recorded runs", size, {
       lostWithout: { type: "value", dataMapping: { value: [{ id: "runs.lost_without", aggregation: "sum" }] }, format: title("Lost without it") },
@@ -85,10 +86,10 @@ export const initialState = (size: Size = "desktop") => ({
       },
     }, [
       { h: 4, ids: ["lostWithout", "lostWith", "leaked", "emails"] },
-      { h: 5, ids: ["byInboxFilter", "byKindFilter", "searchRuns"] },
+      { h: 5, small: 9, ids: ["byInboxFilter", "byKindFilter", "searchRuns"] },
       { h: 6, ids: ["without", "withIt"] },
       { h: 9, ids: ["byInbox", "byModel"] },
-      { h: 12, ids: ["attacks"] },
+      { h: 12, small: 18, ids: ["attacks"] },
     ]),
   ],
 }) as unknown as AgReportState;

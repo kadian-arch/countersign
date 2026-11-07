@@ -14,7 +14,7 @@
 - The dashboard now links each rule that fired to its request, so "Which rules fired" and a new pivot table (rule by outcome) follow the search box and the filters. New calculated fields (money at risk, share of risky money stopped, money saved), a radial gauge, a "Print report" button, and the assistant's tool calls show in plain words and open to the rows they returned. The money-stopped tile says a held request that was in fact fine is not counted.
 - The activity table on the main page uses AG Grid's Theming API in the page's colours, with a quick filter, column filters, tooltips with the full reason, a colour stripe by verdict and "Download as CSV". `docs/ag-grid-and-studio.md` lists every AG Studio and AG Grid feature used.
 
-- Fixed on phones: the top bar was wider than the screen (the shop switch, menu and theme button ran off the right edge, so the whole page scrolled sideways). On a phone the bar now has the brand, menu and theme button on one row and the shop switch on its own full-width row, and menu items, buttons and footer links are bigger to tap. A grid column, the replay picker and the activity search box could also be wider than a small screen; their minimum widths now give way to the space there is. The page was checked from 320 to 1440 pixels wide and on a phone turned sideways, and a test (`tests/test_layout.py`) fails if a fixed pixel minimum width comes back. The dashboard's top bar on a phone puts the shop name on its own line and hides "Print report".
+- Fixed on phones: the top bar was wider than the screen (the shop switch, menu and theme button ran off the right edge, so the whole page scrolled sideways). On a phone the bar now has the brand, menu and theme button on one row and the shop switch on its own full-width row, and menu items, buttons and footer links are bigger to tap. A grid column, the replay picker and the activity search box could also be wider than a small screen; their minimum widths now give way to the space there is. The page was checked from 320 to 1440 pixels wide and on a phone turned sideways, and a test (`tests/test_layout.py`) fails if a fixed pixel minimum width comes back. The dashboard's top bar on a phone puts the shop name on its own line and hides "Print report". On a phone or tablet the dashboard's filter boxes and tables are taller, because in the narrow layout they showed one option or a few rows and hid the rest behind an inner scroll.
 - A nightly check: a Render cron job (`render.yaml`, `scripts/nightly_check.py`) asks the shop to compare its refunds with PayPal's Transaction Search every night, the Setup page shows the last result, and the owner is emailed only if the records really disagree (`POST /api/nightly`, owner only).
 - A Postman collection of the whole API with examples that adapt to the shop's own orders and invoices, and tests (`docs/postman/`, rewritten by `scripts/export_postman.py`; a test keeps it in step with the routes).
 
@@ -24,8 +24,7 @@
 
 ## 0.2.0
 
-The shop became a hosted product with a dashboard, PayPal webhooks and owner alerts, and the proof was rebuilt so that only
-runs made with the current guard are counted.
+The shop became a hosted product with a dashboard, PayPal webhooks and owner alerts, and the proof was rebuilt so that only runs made with the current guard are counted.
 
 ### The dashboard (AG Studio)
 
