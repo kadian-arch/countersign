@@ -28,7 +28,8 @@ for attempt in range(1, 4):   # a shop that is restarting needs a minute
         sys.exit(0 if out["ok"] is True else 1)
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
-            sys.exit(f"The shop refused the owner token ({e.code}).")
+            sys.exit(f"The shop refused the owner token ({e.code}). OWNER_TOKEN on this job must be exactly the web service's value, with no spaces or quotes, "
+                     f"and PUBLIC_URL ({url}) must be the web service's address.")
         print(f"attempt {attempt}: the shop answered {e.code}", flush=True)
     except (urllib.error.URLError, TimeoutError) as e:
         print(f"attempt {attempt}: could not reach the shop ({e})", flush=True)

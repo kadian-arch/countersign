@@ -83,7 +83,7 @@ export function App() {
           </nav>
           <span className="dim">what the agent asked for, and what Countersign decided</span>
           <button className="ghost" onClick={refresh} disabled={refreshing} title="Load the shop's latest numbers">{refreshing ? "Refreshing" : "Refresh"}</button>
-          <button className="ghost" onClick={() => window.print()} title="Print this page, or save it as a PDF to send to someone">Print report</button>
+          <button className="ghost print" onClick={() => window.print()} title="Print this page, or save it as a PDF to send to someone">Print report</button>
           {canEdit && (
             <button onClick={() => setMode(mode === "view" ? "edit" : "view")}>
               {mode === "view" ? "Edit and ask the assistant" : "Done editing"}

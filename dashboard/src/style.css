@@ -18,7 +18,12 @@ body { margin: 0; background: #04050d; color: #f0f2ff; font-family: "Figtree", "
 .strip a { color: #ffc94d; }
 @media (max-width: 700px) {
   .bar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 6px 10px; }
+  .bar .back { order: 1; }
+  .bar .ghost { order: 2; margin-left: auto; }
+  .bar .print { display: none; }   /* printing from a phone is not a thing people do, and the room is needed */
+  .bar b { order: 3; flex: 1 1 100%; font-size: 16px; }
   .bar .tabs { flex-basis: 100%; order: 5; }
+  .bar button { padding: 9px 14px; }
   .strip { font-size: 13px; }
 }
 /* "Print report": only the dashboard is printed, on one landscape page, with the page's own dark background kept */

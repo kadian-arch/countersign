@@ -83,8 +83,19 @@ nav .links a:hover, nav .links a.on { color: var(--ink); background: var(--glass
 .icon-btn:hover { color: var(--ink); border-color: var(--line2); transform: rotate(18deg); }
 #menu { display: none; }
 @media (max-width: 860px) {
-  nav .links { position: absolute; top: 64px; left: 0; right: 0; flex-direction: column; padding: 10px 20px 16px; background: color-mix(in srgb, var(--bg) 92%, transparent); border-bottom: 1px solid var(--line); display: none; }
+  nav .links a { padding: 13px 13px; }
+  nav .links { position: absolute; top: 100%; left: 0; right: 0; flex-direction: column; padding: 10px 20px 16px; background: color-mix(in srgb, var(--bg) 92%, transparent); border-bottom: 1px solid var(--line); display: none; }
   nav .links.open { display: flex; } #menu { display: grid; margin-left: auto; } nav .pill { display: none; }
+}
+/* a phone: the brand, the menu and the theme button share one row, and the shop switch gets a row of its own, so the bar is never wider than the screen */
+@media (max-width: 640px) {
+  nav .wrap { flex-wrap: wrap; height: auto; padding-top: 9px; padding-bottom: 9px; gap: 8px 10px; }
+  .brand { font-size: 18px; } .brand svg { width: 26px; height: 26px; }
+  .modeswitch { order: 5; flex-basis: 100%; display: flex; }
+  .modeswitch button { flex: 1; padding: 10px 8px; font-size: 13px; }
+  .btn.small { min-height: 42px; }
+  footer a { padding: 8px 0; }
+  .icon-btn { width: 42px; height: 42px; }
 }
 
 /* buttons, fields */
@@ -219,7 +230,7 @@ section.block { padding: 60px 0 6px; scroll-margin-top: 72px; }
 .qitem .what { font-weight: 700; margin-bottom: 3px; } .qitem .why { color: var(--muted); font-size: 13.5px; margin-bottom: 10px; } .qitem .acts { display: flex; gap: 8px; }
 #grid { height: 330px; width: 100%; border-radius: 12px; overflow: hidden; }
 .gridbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 12px; }
-.gridbar input { flex: 1; min-width: 180px; }
+.gridbar input { flex: 1; min-width: min(180px, 100%); }
 .gridbar .count { color: var(--muted); font-size: 13px; }
 #grid .ag-row.row-hold { box-shadow: inset 3px 0 0 var(--hold); } #grid .ag-row.row-block { box-shadow: inset 3px 0 0 var(--refuse); } #grid .ag-row.row-allow { box-shadow: inset 3px 0 0 var(--allow); }
 .badge { padding: 2px 10px; border-radius: 99px; font: 600 12px var(--mono); }
@@ -232,7 +243,7 @@ section.block { padding: 60px 0 6px; scroll-margin-top: 72px; }
 
 /* replay */
 .dayhead { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 14px; }
-.dayhead select { width: auto; min-width: 280px; max-width: 100%; }
+.dayhead select { width: auto; min-width: min(280px, 100%); max-width: 100%; }
 .daytiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 @media (max-width: 860px) { .daytiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .dt { padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--glass2); }
@@ -299,7 +310,7 @@ table.book { width: 100%; border-collapse: collapse; font-size: 14px; } table.bo
 
 /* security */
 .model { margin-top: 16px; padding: 24px; } .model h3 { font-size: 24px; margin-bottom: 14px; }
-.model ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px 24px; }
+.model ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 14px 24px; }
 .model li strong { display: block; font: 700 16px var(--display); margin-bottom: 3px; background: linear-gradient(100deg, var(--a3), var(--a1)); -webkit-background-clip: text; background-clip: text; color: transparent; width: fit-content; } .model li span { color: var(--muted); font-size: 14.5px; }
 
 /* footer */
