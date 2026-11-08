@@ -34,7 +34,14 @@ const page = (id: string, size: Size, widgets: Record<string, unknown>, rows: Ro
 const filter = (field: string, text: string) => ({ type: "button-filter", dataMapping: { value: [{ id: field }] }, format: title(text) });
 
 // The dashboard a visitor sees first. Studio lets them change all of it in edit mode.
-export const initialState = (size: Size = "desktop") => ({
+// Rows of the page (24px each) a grid needs to show every row it has: its title, header and scrollbar plus the rows, one more
+// row of slack. Without it the last rows sit under the grid's own scrollbar where nobody can read them.
+export const fitRows = (rows: number, rowPx: number, headerPx: number, least: number, most = 40) =>
+  Math.min(most, Math.max(least, Math.ceil((40 + headerPx + rows * rowPx + 24) / 24) + 1));
+
+export type Fit = { rules?: number; requests?: number; emails?: number };
+
+export const initialState = (size: Size = "desktop", fit: Fit = {}) => ({
   selectedPageId: "Live shop",
   pages: [
     page("Live shop", size, {
@@ -64,8 +71,8 @@ export const initialState = (size: Size = "desktop") => ({
       { h: 5, small: 9, ids: ["byOutcome", "byKind", "search"] },
       { h: 7, ids: ["ribbon", "share"] },
       { h: 9, ids: ["reasons", "perDay"] },
-      { h: 8, ids: ["rulesByOutcome"] },
-      { h: 12, small: 18, ids: ["table"] },
+      { h: fitRows(fit.rules ?? 6, 28, 65, 8), ids: ["rulesByOutcome"] },
+      { h: 12, small: fitRows(fit.requests ?? 9, 24, 33, 18), ids: ["table"] },
     ]),
     page("Recorded runs", size, {
       lostWithout: { type: "value", dataMapping: { value: [{ id: "runs.lost_without", aggregation: "sum" }] }, format: title("Lost without it") },
@@ -89,7 +96,7 @@ export const initialState = (size: Size = "desktop") => ({
       { h: 5, small: 9, ids: ["byInboxFilter", "byKindFilter", "searchRuns"] },
       { h: 6, ids: ["without", "withIt"] },
       { h: 9, ids: ["byInbox", "byModel"] },
-      { h: 12, small: 18, ids: ["attacks"] },
+      { h: 12, small: fitRows(fit.emails ?? 45, 24, 33, 18), ids: ["attacks"] },
     ]),
   ],
 }) as unknown as AgReportState;

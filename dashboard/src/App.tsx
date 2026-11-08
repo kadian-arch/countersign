@@ -4,7 +4,7 @@ import { AgStudioAiModule } from "ag-studio";
 import type { AgStudioApi } from "ag-studio";
 import { serverAdapter } from "./adapter";
 import { harness } from "./analyst";
-import { load, loadRuns, sources, type Analytics, type RunRow } from "./data";
+import { load, loadRuns, reasonRows, sources, type Analytics, type RunRow } from "./data";
 import { Loader } from "./Loader";
 import { initialState, type Size } from "./state";
 import { darkTheme } from "./theme";
@@ -65,7 +65,7 @@ export function App() {
   const ai = useMemo(() => (data ? (params: { api: AgStudioApi }) => harness(params.api, serverAdapter(token), data, runs) : undefined), [data, runs]);
   const definition = useMemo(() => (data ? sources(data, runs) : undefined), [data, runs]);
   // a new layout starts on the page the visitor was looking at
-  const start = useMemo(() => (data ? { ...initialState(size), selectedPageId: lastPage.current } : undefined), [data, size, version]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const start = useMemo(() => (data ? { ...initialState(size, { rules: new Set(reasonRows(data.actions).map((r) => r.reason)).size, requests: data.actions.length, emails: runs.length }), selectedPageId: lastPage.current } : undefined), [data, size, version]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error) return <p className="note">{error} <a href="/">Back to the shop</a></p>;
   if (!ready || !data || !definition || !start) return <Loader />;
