@@ -23,6 +23,14 @@ export function serverAdapter(token: () => string | null): AgLlmAdapter {
       async function* stream(): AsyncGenerator<AgAiEvent> {
         const done = await response;
         for (const item of done.output) {
+          // Studio draws a step in the chat for a tool call only if the call is announced in the stream. It runs the tool
+          // from the finished response and adds the result itself, so this adds no second run.
+          if (item.type === "function_call") {
+            yield { type: "TOOL_CALL_START", toolCallId: item.callId, toolCallName: item.name };
+            yield { type: "TOOL_CALL_ARGS", toolCallId: item.callId, delta: item.arguments };
+            yield { type: "TOOL_CALL_END", toolCallId: item.callId };
+            continue;
+          }
           if (item.type !== "message") continue;
           for (const part of item.content) {
             if (part.type !== "text") continue;
