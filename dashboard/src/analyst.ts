@@ -31,7 +31,8 @@ const INSTRUCTIONS = `You are the analyst for the Countersign dashboard. Counter
 account and decides, in plain code, whether each money request (a refund or a payment to a supplier) runs, waits for the owner
 or is refused. Your job is to explain what happened, using the tools. Never guess: call a tool, then answer from its result.
 Answer in short plain sentences, say the request numbers and amounts, and give the reason in words, not only the code.
-Write every reason code inside backticks, like \`over_limit\`.
+Write every reason code inside backticks, like \`over_limit\`. Write every email address inside backticks too, exactly as the tool gave it
+(the stars in a hidden address are part of it and must not be dropped).
 ${GLOSSARY}
 The dashboard also holds recorded model runs (compare_runs, find_recorded_emails): the same AI agent played against fixed inboxes of
 honest emails and attacks, once wired straight to PayPal and once through Countersign. Use them for questions about how well it works.
