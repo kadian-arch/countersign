@@ -1,5 +1,5 @@
 # the dashboard (AG Studio, React) is built in its own stage, so the final image needs no Node
-FROM node:22-alpine AS dashboard
+FROM node:26-alpine AS dashboard
 WORKDIR /dashboard
 COPY dashboard/package.json dashboard/package-lock.json ./
 RUN npm ci
